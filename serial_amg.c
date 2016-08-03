@@ -12,10 +12,6 @@
 #include "sort.h"
 #include "sarray_sort.h"
 #include "gs_defs.h"
-#include "comm.h"
-#include "crystal.h"
-#include "sarray_transfer.h"
-#include "gs.h"
 #include "amg_tools.h"
 #include "amg_setup.h"
 
@@ -97,7 +93,6 @@ int main(int argc, char *argv[])
         Aj[i] = (uint)Ajd[i]-1;
     }
 
-    const ulong *id;
     struct crs_data *data = tmalloc(struct crs_data, 1);
     amg_setup(n-1, Ai, Aj, Av, data);
 

@@ -16,7 +16,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 /*******************************************************************************
 * Algebraic functions
 *******************************************************************************/
-static void mat_max(double *y, struct csr_mat *A, double *f, double *x, 
+static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double *x, 
     double tol);
 
 uint lanczos(double **lambda, struct csr_mat *A);
@@ -33,7 +33,8 @@ void chebsim(double *m, double *c, double rho, double tol);
 
 void sparsify(double *S, struct csr_mat *A, double tol);
 
-uint pcg(double *v, struct csr_mat *A, double *r, double *M, double tol);
+uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol, 
+    double *b);
 
 void min_skel(struct csr_mat *W_skel, struct csr_mat *R);
 
@@ -41,8 +42,8 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     struct csr_mat *W_skel, struct csr_mat *Af, struct csr_mat *Ar, uint rnc,
     double *alpha, double *u, double *v, double tol);
 
-void interp(struct csr_mat *Wt, struct csr_mat *At, struct csr_mat *Bt, double *u, 
-    double *lambda);
+void interp(struct csr_mat *Wt, struct csr_mat *At, struct csr_mat *Bt, 
+    double *u, double *lambda);
 
 static void mv_utt(double *y, uint n, const double *U, const double *x);
 
@@ -62,7 +63,7 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol);
 void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B, 
     double iftrsp);
 
-void interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
+int interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
     struct csr_mat *W_skel);
 
 static void sp_add(uint yn, const uint *yi, double *y, double alpha,
@@ -114,7 +115,7 @@ void bin_op(double *mask, double *a, uint n, enum bin_ops op);
 // mask[i] = 1 if (a[i] (op) trigger) is true
 //         = 0 otherwise
 // i = 0, n-1
-enum mask_ops {gt, lt, ge, le, eq}; //>, <, >=, <=, =
+enum mask_ops {gt, lt, ge, le, eq, ne}; //>, <, >=, <=, =, !=
 void mask_op(double *mask, double *a, uint n, double trigger, enum mask_ops op);
 
 /*******************************************************************************
@@ -149,6 +150,10 @@ void init_array(double *a, uint n, double v);
 enum ar_scal_ops {mult_op}; // a[i] = a[i] * scal
 void ar_scal_op(double *a, double scal, uint n, enum ar_scal_ops op);
 
+// Condense array by deleting elment a[i] if b[i] == target
+// Returns size of condense array
+uint condense_array(double *a, double *b, const double target, const uint n);
+
 /*******************************************************************************
 * Diagonal operations
 *******************************************************************************/
@@ -177,20 +182,6 @@ typedef struct {coo_mat coo_A; uint dest;} coo_mat_dest;
 
 /* Build matrix using csr format */
 void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz);
-
-/* Sorting functions */
-int comp_coo_v (const void * a, const void * b);
-int comp_coo_ij (const void * a, const void * b);
-int comp_coo_ji (const void * a, const void * b);
-int comp_uint (const void * a, const void * b);
-int comp_gs_id(const void * a, const void * b);
-/* Unused functions
-int comp_coo_i (const void * a, const void * b);
-int comp_coo_j (const void * a, const void * b);
-*/
-
-/* Remove duplicates in a sorted list */
-static uint remdup(uint *array, uint size);
 
 /* Function to build sparse matrix */
 void build_csr(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 
