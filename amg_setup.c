@@ -13,10 +13,6 @@
 #include "sort.h"
 #include "sarray_sort.h"
 #include "gs_defs.h"
-#include "comm.h"
-#include "crystal.h"
-#include "sarray_transfer.h"
-#include "gs.h"
 #include "amg_tools.h"
 #include "amg_setup.h"
 
@@ -73,7 +69,6 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 /* Memory allocation for data struct. */
 /**************************************/
 
-    if ((data->comm).id == 0){
 
     uint rn = A->rn;
     uint cn = A->cn;
@@ -313,9 +308,6 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     free_csr(&Afc);
     free_csr(&Ac);
     //free_csr(&W);
-
-// End of "if ((data->comm).id)"    
-    }
 
     free_csr(&A);
 }
