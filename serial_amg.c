@@ -12,10 +12,6 @@
 #include "sort.h"
 #include "sarray_sort.h"
 #include "gs_defs.h"
-#include "comm.h"
-#include "crystal.h"
-#include "sarray_transfer.h"
-#include "gs.h"
 #include "amg_tools.h"
 #include "amg_setup.h"
 
