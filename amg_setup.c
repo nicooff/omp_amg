@@ -653,10 +653,40 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
     }
 }
 
+void csr2coo(coo_mat *coo_A, struct csr_mat *A)
+{
+ // Build matrix using coordinate list format
+    uint rn = A->rn;
+    uint cn = A->cn;
+    uint nnz = A->row_off[rn];
+
+    //coo_mat *coo_A = tmalloc(coo_mat, nnz);
+
+    uint i, j, je, js;
+    for (i=0;i<rn;i++)
+    {
+        js = A->row_off[i];
+        je = A->row_off[i+1];
+        for (j=js;j<je;j++)
+        {
+            coo_A[j].i = i;
+            coo_A[j].j = A->col[j];
+            coo_A[j].v = A->a[j];
+        }
+    }
+}
+
 /* Transpose csr matrix */
 void transpose(struct csr_mat *At, const struct csr_mat *A)
 {
-    // Build matrix using coordinate list format
+
+    uint rn = A->rn;
+    uint nnz = A->row_off[rn];
+
+    coo_mat *coo_A = tmalloc(coo_mat, nnz);
+ 
+    csr2coo(coo_A,A);
+/*    
     uint rn = A->rn;
     uint cn = A->cn;
     uint nnz = A->row_off[rn];
@@ -667,15 +697,21 @@ void transpose(struct csr_mat *At, const struct csr_mat *A)
     for (i=0;i<rn;i++)
     {
         js = A->row_off[i];
-        je = A->row_off[i+1];        
+        je = A->row_off[i+1];
         for (j=js;j<je;j++)
         {
             coo_A[j].i = i;
             coo_A[j].j = A->col[j];
-            coo_A[j].v = A->a[j];  
+            coo_A[j].v = A->a[j];
         }
     }
-    
+*/
+
+    uint i, j, je, js;
+
+    uint cn = A->cn;
+
+
     // Sort matrix by columns then rows
     buffer buf = {0};
     sarray_sort_2(coo_mat, coo_A, nnz, j, 0, i, 0, &buf);

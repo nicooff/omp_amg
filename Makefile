@@ -5,8 +5,8 @@ OBJ_FILES=$(addsuffix .o,$(BASENAMES))
 OBJECTS= "serial_amg.o amg_tools.o amg_setup.o fail.o"
 #comm.o comm_test.o crs_test.o crystal.o crystal_test.o fail.o fcrs.o fcrystal.o findpts.o findpts_el_2.o findpts_el_2_test2.o findpts_el_2_test.o findpts_el_3.o findpts_el_3_test2.o findpts_el_3_test.o findpts_local.o findpts_local_test.o findpts_test.o gen_poly_imp.o gs.o gs_local.o gs_test.o gs_test_old.o gs_unique_test.o lob_bnd.o lob_bnd_test.o obbox.o obbox_test.o poly.o poly_test2.o poly_test.o rand_elt_test.o sarray_sort.o sarray_sort_test.o sarray_transfer.o sarray_transfer_test.o sort.o sort_test2.o sort_test.o sparse_cholesky.o spchol_test.o tensor.o xxt.o xxt_test2.o xxt_test.o
 
-CC=mpicc -std=c99 --pedantic
-CFLAGS+=-DMPI
+CC=gcc -std=c99 --pedantic
+#CFLAGS+=-DMPI
 #CFLAGS+=-DPREFIX=jl_
 CFLAGS+=-DNO_NEK_EXITT
 CFLAGS+=-DGLOBAL_LONG
