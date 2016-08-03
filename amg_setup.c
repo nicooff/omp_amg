@@ -2029,7 +2029,7 @@ static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double 
             if(f[k] == 0 || fabs(A->a[j]) < Amax) continue;
             {
               if(xj>yp[ithread*cn+k]) yp[ithread*cn+k]=xj;
-              if(xj>y[k]) y[k]=xj;
+              /*if(xj>y[k]) y[k]=xj;*/
             }
         }
     }
