@@ -16,7 +16,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 /*******************************************************************************
 * Algebraic functions
 *******************************************************************************/
-static void mat_max(double *y, struct csr_mat *A, double *f, double *x, 
+static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double *x, 
     double tol);
 
 uint lanczos(double **lambda, struct csr_mat *A);
@@ -62,7 +62,7 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol);
 void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B, 
     double iftrsp);
 
-void interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
+int interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
     struct csr_mat *W_skel);
 
 static void sp_add(uint yn, const uint *yi, double *y, double alpha,

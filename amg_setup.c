@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <omp.h>
 #include "c99.h"
 #include "name.h"
 #include "types.h"
@@ -487,7 +488,7 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
 /* Interp_lmop 
    St, At and W_skelt are assumed to be transposed
    St needs to be initialized to X_skelt! */
-void interp_lmop(struct csr_mat *St, struct csr_mat *At, double *u,
+int interp_lmop(struct csr_mat *St, struct csr_mat *At, double *u,
     struct csr_mat *W_skelt)
 {
     uint nf = W_skelt->rn, nc = W_skelt->cn;
@@ -1378,6 +1379,12 @@ static void tdeig(double *lambda, double *y, double *d, const double *v,
 void coarsen(double *vc, struct csr_mat *A, double ctol)
 {
     uint rn = A->rn, cn = A->cn;
+    // array reduction for openmp in mat_max
+    /*omp_set_num_threads(68);*/
+    const int nthreads = omp_get_max_threads();
+    const int ithread = omp_get_thread_num();
+    printf("Number of threads: %d\n", nthreads);
+    double *mp = malloc(sizeof(double)*cn*nthreads);
 
     // D = diag(A)
     double *D = tmalloc(double, cn);
@@ -1422,6 +1429,7 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
 
     double *mask = tmalloc(double, cn);
     double *m = tmalloc(double, cn);
+    printf("coarse A->rn: %u, A->cn: %u\n", A->rn, A->cn);
 
     while (1)
     {
@@ -1475,7 +1483,7 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
         memcpy(tmp, g, cn*sizeof(double)); // tmp = g
             // g (needed later) copied into tmp
         vv_op(tmp, mask, cn, ewmult); // tmp = mask.*tmp (= mask.*g)        
-        mat_max(m, S, vf, tmp, mat_max_tol); // m = mat_max(S,vf,mask.*g)
+        mat_max(m, mp, S, vf, tmp, mat_max_tol); // m = mat_max(S,vf,mask.*g)
  
         // mask = mask & (g-m>=0)
         vv_op(g, m, cn, minus); // g = g - m
@@ -1489,7 +1497,7 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
         }
         memcpy(tmp, mask, cn*sizeof(double)); // copy mask to tmp
         vv_op(tmp, g, cn, ewmult); // tmp = tmp.*g (= mask.*id)
-        mat_max(m, S, vf, tmp, mat_max_tol); // m = mat_max(S,vf,mask.*g)
+        mat_max(m, mp, S, vf, tmp, mat_max_tol); // m = mat_max(S,vf,mask.*g)
 
         // mask = mask & (id-m>0)
         vv_op(g, m, cn, minus); // id = id - m
@@ -1524,6 +1532,9 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
     free(mask);
     free(m);
     free(tmp);
+
+    // Free openmp reduction array
+    free(mp);
 }
 
 /* Exctract sub-matrix 
@@ -1983,19 +1994,29 @@ static uint remdup(uint *array, uint size)
    symmetric matrix A only 
    - x and y are local
 */
-static void mat_max(double *y, struct csr_mat *A, double *f, double *x, 
+static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double *x, 
     double tol)
 {
     uint i, rn = A->rn, cn = A->cn;
-
     for(i=0;i<cn;++i) 
     {
         y[i] = -DBL_MAX;
     }
-
+#pragma omp parallel 
+    {
+      const int nthreads = omp_get_num_threads();
+      const int ithread = omp_get_thread_num();
+#pragma omp for
+      for(i=0;i<cn;++i) 
+      {
+        uint j;
+        for(j=0;j<nthreads;++j) 
+          yp[j*cn+i]=-DBL_MAX;
+      }
+#pragma omp for 
     for(i=0;i<rn;++i) 
     {
-        double xj = *x++;
+        double xj = x[i];
         uint j, jb = A->row_off[i], je = A->row_off[i+1];
         double Amax = 0;
         for(j=jb;j<je;++j)
@@ -2005,8 +2026,20 @@ static void mat_max(double *y, struct csr_mat *A, double *f, double *x,
         {
             uint k = A->col[j];
             if(f[k] == 0 || fabs(A->a[j]) < Amax) continue;
-            if(xj>y[k]) y[k]=xj;
+            {
+              if(xj>yp[ithread*cn+k]) yp[ithread*cn+k]=xj;
+              if(xj>y[k]) y[k]=xj;
+            }
         }
+    }
+#pragma omp for 
+    for(i=0;i<cn;i++)
+    {
+      for(int j=0;j<nthreads;j++)
+      {
+        if(y[i]<yp[j*cn+i]) y[i]=yp[j*cn+i];
+      }
+    }
     }
 }
 
