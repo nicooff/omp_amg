@@ -25,9 +25,9 @@
     - Author of the original version (Matlab): James Lottes
     - Author of the serial version in C: Nicolas Offermans
 
-    - Last update: 16 December, 2015
+    - Last update: 3 August, 2016
 
-    - Status: developing function interp(...) based cinterp.c from Matlab.
+    - Status: finished solve_constraint.
 
 */
 
@@ -46,20 +46,17 @@
     TODO: 
         - properly check anyvc (Done but not tested)
         - write sym_sparsify
-        - rewrite sparsify so that the matrix at output is the sparsified matrix
 */
 
 void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     struct crs_data *data)
 /*    Build data, the "struct crs_data" defined in amg_setup.h that is required
-      to execute the AMG solver. 
-      Matrices are partitioned by rows. */
+      to execute the AMG solver. */
 {   
 /* Declare csr matrix A (assembled matrix Av under csr format) */  
     struct csr_mat *A = tmalloc(struct csr_mat, 1);
 
 /* Build A the required data for the setup */
- //   build_setup_data(A, n, id, nz_unassembled, Ai, Aj, Av, data);
     build_csr(A, n, Ai, Aj, Av);
 
 /* At this point, A is stored on proc 0 using csr format
@@ -68,7 +65,6 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 /**************************************/
 /* Memory allocation for data struct. */
 /**************************************/
-
 
     uint rn = A->rn;
     uint cn = A->cn;
@@ -349,7 +345,10 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 
     double *v = tmalloc(double, rnf); 
 
-    pcg(v, Af, r, Df, 1e-16);   
+    double *b = tmalloc(double, rnf);
+    init_array(b, rnf, 1.0);    
+
+    pcg(v, Af, r, Df, 1e-16, b);   
     
     // dc = diag(Ac)
     double *Dc = tmalloc(double, cnc);
@@ -434,7 +433,7 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
 
     transpose(W0, W0t); 
 
- //   solve_constraint(lam, W_skel, Af, W0, alpha, u, v, tol);
+    solve_constraint(lam, W_skel, Af, W0, alpha, u, v, tol);
 
     free_csr(&Arminus);
     free_csr(&W0);
@@ -443,23 +442,21 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
 
 /* Solve constraint 
    W_skelt and Aft are trasposed */
-/*void solve_constraint(double *lam, struct csr_mat *W_skel, struct csr_mat *Af,
+void solve_constraint(double *lam, struct csr_mat *W_skel, struct csr_mat *Af,
 struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
 {
     uint nf = W_skel->rn, nc = W_skel->cn;
     double *au2 = tmalloc(double, nc);
     struct csr_mat *S = tmalloc(struct csr_mat, 1);
-    struct csr_mat *X_skel = tmalloc(struct csr_mat, 1); // Logical matrix
 
     memcpy(au2, u, nc*sizeof(double)); // au2 = u
     array_op(u, nc, sqr_op); // au2 = u.^2
     vv_op(au2, alpha, nc, ewmult); // au2 = alpha.*(u.^2)
 
-    mxm(X_skel, W_skel, W_skel, 1.0);
-    
     // Need to initialize S before calling interp_lmop
-    copy_csr(S, X_skel);
+    mxm(S, W_skel, W_skel, 1.0);
     
+    // Transpose matrices before calling interp_lmop
     struct csr_mat *St = tmalloc(struct csr_mat, 1);
     transpose(St, S);
 
@@ -471,11 +468,75 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
     
     interp_lmop(St, Aft, au2, W_skelt);
 
-    print_csr(St);
+    transpose(S, St);
 
-    free_csr(&X_skel);
-//    free_csr(&S);
-} */
+    free_csr(&St);
+    free_csr(&Aft);
+    free_csr(&W_skelt);
+
+    double *resid = tmalloc(double, nf);
+
+    apply_M(resid, 1.0, v, -1.0, W0, u);
+    
+    double *d = tmalloc(double, nf);
+
+    diag(d, S);
+
+    double *dlogic = tmalloc(double, nf);
+    mask_op(dlogic, d, nf, 0.0, ne);
+
+    struct csr_mat *subS = tmalloc(struct csr_mat, 1);
+
+    uint i, ifall = 0;
+    for (i=0;i<nf;i++)
+    {
+        if (dlogic[i]==0.)
+        {
+            ifall = 1;
+            lam[i] = 0.;
+        }
+    }
+
+    if (ifall != 0)
+    {
+        sub_mat(subS, S, dlogic, dlogic);
+        free_csr(S);
+        S = subS;
+    }
+
+    uint ncond = condense_array(resid, dlogic, 0.0, nf);
+    condense_array(d, dlogic, 0.0, nf);
+    double *lam_cond = tmalloc(double, nf);
+    memcpy(lam_cond, lam, nf*sizeof(double));
+    condense_array(lam_cond, dlogic, 0.0, nf);
+
+    double *q = tmalloc(double, ncond);
+    apply_M(q, 1., resid, -1., S, lam_cond);    
+
+    array_op(d, ncond, minv_op);
+
+    double *x = tmalloc(double, ncond);
+
+    pcg(x, S, q, d, tol, resid);
+
+    for (i=0;i<nf;i++)
+    {
+        if (dlogic[i] != 0.) lam[i] = *x++;
+    }
+
+// Outpost for checking
+    printf("Eigenvalues when exiting solve_constraint:\n");
+    uint ii;
+    for (ii=0;ii<nf;ii++) printf("lam[%u] = %lf\n", ii, lam[ii]);
+//
+
+    free_csr(&S);
+    free(au2);
+    free(resid);
+    free(d);
+    free(dlogic);
+    free(lam_cond);
+}
 
 /* Interp_lmop 
    St, At and W_skelt are assumed to be transposed
@@ -487,60 +548,63 @@ int interp_lmop(struct csr_mat *St, struct csr_mat *At, double *u,
     uint max_nz=0, max_Q;
     uint i;
   
-  double *sqv1, *sqv2;
-  double *Q, *QQt;
+    double *sqv1, *sqv2;
+    double *Q, *QQt;
   
-  for(i=0;i<nf;++i) {
-    uint nz=W_skelt->row_off[i+1]-W_skelt->row_off[i];
-    if(nz>max_nz) max_nz=nz;
-  }
-  max_Q = (max_nz*(max_nz+1))/2;
+    for(i=0;i<nf;++i) {
+        uint nz=W_skelt->row_off[i+1]-W_skelt->row_off[i];
+        if(nz>max_nz) max_nz=nz;
+    }
+    max_Q = (max_nz*(max_nz+1))/2;
   
-  if(!(sqv1=tmalloc(double, 2*max_nz + max_Q + max_nz*max_nz)))
-    return 0;
-  sqv2 = sqv1+max_nz, Q = sqv2+max_nz, QQt = Q+max_Q;
+    if(!(sqv1=tmalloc(double, 2*max_nz + max_Q + max_nz*max_nz)))
+        return 0;
+    sqv2 = sqv1+max_nz, Q = sqv2+max_nz, QQt = Q+max_Q;
 
-  { uint nz=St->row_off[nf]; for(i=0;i<nz;++i) St->a[i]=0; }
-  for(i=0;i<nc;++i) {
-    const uint *Qi = &W_skelt->col[W_skelt->row_off[i]];
-    uint nz = W_skelt->row_off[i+1]-W_skelt->row_off[i];
-    uint m,k;
-    double *qk = Q;
-    double uj = u[i];
-    for(k=0;k<nz*nz;++k) QQt[k]=0;
-    for(k=0;k<nz;++k,qk+=k) {
-      double alpha;
-      uint s = Qi[k];
-      /* sqv1 := R_(k+1) A e_s */
-      sp_restrict_sorted(sqv1, k+1,Qi, At->row_off[s+1]-At->row_off[s],
-        &At->col[At->row_off[s]], &At->a[At->row_off[s]]);
-      /* sqv2 := Q^t A e_s */
-      mv_utt(sqv2, k,Q, sqv1);
-      /* qk := Q Q^t A e_s */ 
-      mv_ut(qk, k,Q, sqv2);
-      /* alpha := ||(I-Q Q^t A)e_s||_A^2 = (A e_s)^t (I-Q Q^t A)e_s */
-      alpha = sqv1[k];
-      for(m=0;m<k;++m) alpha -= sqv1[m] * qk[m];
-      /* qk := Q e_(k+1) = alpha^{-1/2} (I-Q Q^t A)e_s */
-      alpha = -1.0 / sqrt(alpha);
-      for(m=0;m<k;++m) qk[m] *= alpha;
-      qk[k] = -alpha;
-      /* QQt := QQt + qk qk^t */
-      for(m=0;m<=k;++m) {
-        uint j, mnz = m*nz; double qkm = qk[m];
-        for(j=0;j<=k;++j) QQt[mnz+j] += qkm * qk[j];
-      }
+    { uint nz=St->row_off[nc]; for(i=0;i<nz;++i) St->a[i]=0.0; }
+    for(i=0;i<nf;++i)
+    {
+        const uint *Qj = &W_skelt->col[W_skelt->row_off[i]];
+        uint nz = W_skelt->row_off[i+1]-W_skelt->row_off[i];
+        uint m,k;
+        double *qk = Q;
+        double ui = u[i];
+        for(k=0;k<nz*nz;++k) QQt[k]=0;
+        for(k=0;k<nz;++k,qk+=k) 
+        {
+            double alpha;
+            uint s = Qj[k];
+            /* sqv1 := R_(k+1) A e_s */
+            sp_restrict_sorted(sqv1, k+1,Qj, At->row_off[s+1]-At->row_off[s],
+                &At->col[At->row_off[s]], &At->a[At->row_off[s]]);
+            /* sqv2 := Q^t A e_s */
+            mv_utt(sqv2, k,Q, sqv1);
+            /* qk := Q Q^t A e_s */ 
+            mv_ut(qk, k,Q, sqv2);
+            /* alpha := ||(I-Q Q^t A)e_s||_A^2 = (A e_s)^t (I-Q Q^t A)e_s */
+            alpha = sqv1[k];
+            for(m=0;m<k;++m) alpha -= sqv1[m] * qk[m];
+            /* qk := Q e_(k+1) = alpha^{-1/2} (I-Q Q^t A)e_s */
+            alpha = -1.0 / sqrt(alpha);
+            for(m=0;m<k;++m) qk[m] *= alpha;
+            qk[k] = -alpha;
+            /* QQt := QQt + qk qk^t */
+            for(m=0;m<=k;++m) 
+            {
+                uint j, mnz = m*nz; double qkm = qk[m];
+                for(j=0;j<=k;++j) QQt[mnz+j] += qkm * qk[j];
+            }
+        }   
+        /* St := St + u_j QQt */
+        qk=QQt;
+        for(k=0;k<nz;++k,qk+=nz) 
+        {
+            uint j = Qj[k], tj = St->row_off[j];
+            sp_add(St->row_off[j+1]-tj,&St->col[tj],&St->a[tj], ui, nz,Qj,qk);
+        }
     }
-    /* St := St + u_j QQt */
-    qk=QQt;
-    for(k=0;k<nz;++k,qk+=nz) {
-      i = Qi[k];
-      uint ti = St->row_off[i];
-      sp_add(St->row_off[i+1]-ti,&St->col[ti],&St->a[ti], uj, nz,Qi,qk);
-    }
-  }
-  free(sqv1);
-  return 1;
+    free(sqv1);
+    return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -709,8 +773,8 @@ void transpose(struct csr_mat *At, const struct csr_mat *A)
 /* Build interpolation matrix.
    It is assumed that matrix W is initialized with minimum skeleton.
    Wt, At and Bt are transposed matrices ! */
-void interp(struct csr_mat *Wt, struct csr_mat *At, struct csr_mat *Bt, double *u, 
-    double *lambda)
+void interp(struct csr_mat *Wt, struct csr_mat *At, struct csr_mat *Bt, 
+    double *u, double *lambda)
 {
     uint nf = Wt->rn, nc = Wt->cn;
     uint max_nz = 0, max_Q;
@@ -894,7 +958,8 @@ void min_skel(struct csr_mat *W_skel, struct csr_mat *R)
 }
 
 /* Preconditioned conjugate gradient */
-uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol)
+uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol, 
+    double *b)
 {
     uint rn = A->rn;
     uint cn = A->cn;
@@ -914,7 +979,13 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol)
     // rho_stop=tol*tol*rho_0
     double rho = vv_dot(r, z, rn);
 
-    double rho_stop = tol*tol*rho;
+    double *tmp = tmalloc(double, rn);
+    double rho_0;
+    memcpy(tmp, M, rn*sizeof(double));
+    vv_op(tmp, b, rn, ewmult);
+    rho_0 = vv_dot(tmp, b, rn);
+
+    double rho_stop = tol*tol*rho_0;
 
     // n = min(length(r),100);
     uint n = rn;
@@ -931,7 +1002,7 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol)
     
     uint k = 0;
     double alpha = 0, beta = 0;
-    double *tmp = tmalloc(double, rn);
+    init_array(tmp, rn, 0.0);
     double *w = tmalloc(double, rn);
 
     // while rho > rho_stop && k<n
@@ -1032,7 +1103,9 @@ void sparsify(double *S, struct csr_mat *A, double tol)
         }
     }
 
-    qsort(coo_A, ncol, sizeof(coo_mat), comp_coo_v);
+    buffer buf = {0};
+    sarray_sort(coo_mat, coo_A, ncol, v, 0, &buf);;
+    buffer_free(&buf);
 
     for (i=0; i<ncol; i++)
     {
@@ -1577,12 +1650,7 @@ void sub_mat(struct csr_mat *subA, struct csr_mat *A, double* vr, double *vc)
     }
 
     // Initialize and build sub-matrix
-    subA->rn = subrn;
-    subA->cn = subcn;
-
-    subA->row_off = tmalloc(uint, subrn+1);
-    subA->col     = tmalloc(uint, subncol);
-    subA->a       = tmalloc(double, subncol);
+    malloc_csr(subA, subrn, subcn, subncol);
 
     uint *subrow_off = subA->row_off;
     uint *subcol     = subA->col;
@@ -1710,11 +1778,12 @@ void mask_op(double *mask, double *a, uint n, double trigger, enum mask_ops op)
     uint i;
     switch(op)
     {
-        case(gt): for (i=0;i<n;i++) *mask++ = (*a++ > trigger)? 1. : 0.; break;
-        case(lt): for (i=0;i<n;i++) *mask++ = (*a++ < trigger)? 1. : 0.; break;
-        case(ge): for (i=0;i<n;i++) *mask++ = (*a++ >= trigger)? 1. : 0.; break;
-        case(le): for (i=0;i<n;i++) *mask++ = (*a++ <= trigger)? 1. : 0.; break;
-        case(eq): for (i=0;i<n;i++) *mask++ = (*a++ = trigger)? 1. : 0.; break;
+        case(gt): for (i=0;i<n;i++) mask[i] = (a[i] > trigger)? 1. : 0.; break;
+        case(lt): for (i=0;i<n;i++) mask[i] = (a[i] < trigger)? 1. : 0.; break;
+        case(ge): for (i=0;i<n;i++) mask[i] = (a[i] >= trigger)? 1. : 0.; break;
+        case(le): for (i=0;i<n;i++) mask[i] = (a[i] <= trigger)? 1. : 0.; break;
+        case(eq): for (i=0;i<n;i++) mask[i] = (a[i] = trigger)? 1. : 0.; break;
+        case(ne): for (i=0;i<n;i++) mask[i] = (a[i] != trigger)? 1. : 0.; break;
     }
 }
 
@@ -1779,6 +1848,21 @@ void ar_scal_op(double *a, double scal, uint n, enum ar_scal_ops op)
     {
         case(mult_op)  :  for (i=0;i<n;i++) *a = (*a)*scal, a++; break;
     }
+}
+
+// Condense array by deleting elment a[i] if b[i] == target
+// Returns size of condense array
+uint condense_array(double *a, double *b, const double target, const uint n)
+{
+    double *tmp = tmalloc(double, n);
+    init_array(tmp, n, 0.0);
+        
+    uint i, counter = 0;
+    for (i=0;i<n;i++) {if (b[i] != target) tmp[counter++] = a[i];}
+    memcpy(a, tmp, counter*sizeof(double));
+
+    free(tmp);
+    return counter;
 }
 
 /*******************************************************************************
@@ -1904,81 +1988,6 @@ void free_csr(struct csr_mat **A)
         free(*A);
         *A = NULL;
      }
-}
-
-int comp_gs_id(const void *a, const void *b)
-{
-    if (abs(*(slong*)a) > abs(*(slong*)b)) return 1;
-    else if (abs(*(slong*)a) < abs(*(slong*)b)) return -1;
-    else return 0;
-}
-
-int comp_coo_v (const void * a, const void * b)
-{
-    if (((coo_mat*)a)->v > ((coo_mat*)b)->v) return 1;
-    else if (((coo_mat*)a)->v < ((coo_mat*)b)->v) return -1;
-    else return 0;
-} 
-
-/* Unused but could be useful
-int comp_coo_i (const void * a, const void * b)
-{
-    if (((struct coo_mat*)a)->i > ((struct coo_mat*)b)->i) return 1;
-    else if (((struct coo_mat*)a)->i < ((struct coo_mat*)b)->i) return -1;
-    else return 0;
-} 
-
-int comp_coo_j (const void * a, const void * b)
-{
-    if (((struct coo_mat*)a)->j > ((struct coo_mat*)b)->j) return 1;
-    else if (((struct coo_mat*)a)->j < ((struct coo_mat*)b)->j) return -1;
-    else return 0;
-}
-*/
-
-/* Sort coo matrix by rows first then by columns */
-int comp_coo_ij (const void * a, const void * b)
-{
-    if (  ((coo_mat*)a)->i >  ((coo_mat*)b)->i  ||
-        ( ((coo_mat*)a)->i == ((coo_mat*)b)->i  &&
-          ((coo_mat*)a)->j >  ((coo_mat*)b)->j )  ) return 1;
-    else if (((coo_mat*)a)->i == ((coo_mat*)b)->i &&
-             ((coo_mat*)a)->j == ((coo_mat*)b)->j) return 0;
-    else return -1;
-}
-
-/* Sort coo matrix by columns first then by rows */
-int comp_coo_ji (const void * a, const void * b)
-{
-    if (  ((coo_mat*)a)->j >  ((coo_mat*)b)->j  ||
-        ( ((coo_mat*)a)->j == ((coo_mat*)b)->j  &&
-          ((coo_mat*)a)->i >  ((coo_mat*)b)->i )  ) return 1;
-    else if (((coo_mat*)a)->i == ((coo_mat*)b)->i &&
-             ((coo_mat*)a)->j == ((coo_mat*)b)->j) return 0;
-    else return -1;
-}
-
-
-/* Comparison function for uint */
-int comp_uint (const void * a, const void * b)
-{
-    if ( *(uint*)a > *(uint*)b ) return 1;
-    else if ( *(uint*)a < *(uint*)b ) return -1;
-    else return 0;
-}
-
-/* Remove duplicates from a sorted list */
-static uint remdup(uint *array, uint size)
-{
-    uint i;
-    uint last = 0;
-
-    for (i = 1; i < size; i++)
-    {
-        if (array[i] != array[last])
-            array[++last] = array[i];
-    }
-    return(last + 1);
 }
 
 // C-MEX FUNCTIONS TRANSFORMED TO C
