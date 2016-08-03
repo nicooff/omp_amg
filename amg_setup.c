@@ -427,7 +427,8 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     init_array(zeros, rnc, 0.0);
 
     struct csr_mat *Arminust = tmalloc(struct csr_mat, 1);
-    transpose(Arminust, Arminus);  
+    transpose(Arminust, Arminus); 
+    free_csr(&Arminus); 
 
     struct csr_mat *W0t = tmalloc(struct csr_mat, 1);
     transpose(W0t, W0);   
@@ -437,8 +438,7 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     transpose(W0, W0t); 
 
     solve_constraint(lam, W_skel, Af, W0, alpha, u, v, tol);
-
-    free_csr(&Arminus);
+    free_csr(&Arminust);
     free_csr(&W0);
     free_csr(&W0t);
 }
