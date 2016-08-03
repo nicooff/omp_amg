@@ -22,7 +22,6 @@ struct labelled_rid {
 };
 
 struct crs_data {
-  struct comm comm;
   struct gs_data *gs_top;
   uint un, *umap; /* number of unique id's on this proc, map to user ids */
   double tni; /* 1 / (total number of unique ids)  ... for computing mean */
@@ -61,15 +60,6 @@ void mat_condense_sorted(struct array *const mat);
 void mat_condense(
   struct array *const mat, const enum mat_order order, buffer *const buf);
 
-void mat_distribute(struct array *const mat, const enum distr d, 
-    const enum mat_order o, struct crystal *const cr);
-
-void mat_list_nonlocal_sorted(
-  struct array *const nonlocal_id,
-  const struct array *const mat, const enum distr d,
-  const ulong *uid, struct crystal *const cr);
-
-void barrier(const struct comm *c);
 double get_time(void);
 double apply_M(double *z, const double alpha, const double *y,
   const double beta, const struct csr_mat *const M, const double *x);
