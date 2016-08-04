@@ -26,8 +26,8 @@ struct amg_setup_data {
 //  uint un, *umap; /* number of unique id's on this proc, map to user ids */
 //  double tni; /* 1 / (total number of unique ids)  ... for computing mean */
   int null_space;
-  unsigned levels;
-  unsigned *cheb_m; /* cheb_m  [levels-1] : smoothing steps */
+  uint levels;
+  uint *cheb_m; /* cheb_m  [levels-1] : smoothing steps */
   double *cheb_rho; /* cheb_rho[levels-1] : spectral radius of smoother */
   uint *lvl_offset;
   double *Dff;      /* diagonal smoother, F-relaxation */

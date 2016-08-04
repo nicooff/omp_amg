@@ -111,7 +111,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 /* Make sure that enough memory is allocated */
     if (slevel > 0 && slevel % initsize == 0)
     {
-        int memsize = (slevel/initsize+1)*initsize;
+        uint memsize = (slevel/initsize+1)*initsize;
         data->cheb_m = trealloc(uint, data->cheb_m, memsize);
         data->cheb_rho = trealloc(double, data->cheb_rho, memsize); 
         data->lvl_offset = trealloc(uint, data->lvl_offset, memsize);
@@ -541,9 +541,11 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
     }
 
 // Outpost for checking
+#ifdef PRINT_DEBUG
     printf("Eigenvalues when exiting solve_constraint:\n");
     uint ii;
-    for (ii=0;ii<nf;ii++) printf("lam[%u] = %lf\n", ii, lam[ii]);
+    for (ii=0;ii<nf;ii++) printf("lam[%u] = %lf\n", (unsigned int) ii, lam[ii]);
+#endif
 //
 
     free_csr(&S);
@@ -1525,7 +1527,7 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
 
     double *mask = tmalloc(double, cn);
     double *m = tmalloc(double, cn);
-    printf("coarse A->rn: %u, A->cn: %u\n", A->rn, A->cn);
+    printf("coarse A->rn: %u, A->cn: %u\n", (unsigned int) A->rn, (unsigned int) A->cn);
 
     while (1)
     {
@@ -2150,37 +2152,23 @@ void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz)
 /* TO BE DELETED */
 void print_csr(struct csr_mat *P)
 {
+#ifdef PRINT_DEBUG
     printf("P:\n"); 
-    printf(" rn=%u, cn=%u, nnz=%u\n", P->rn, P->cn, P->row_off[P->rn]); 
+    printf(" rn=%u, cn=%u, nnz=%u\n", (unsigned int) P->rn, (unsigned int) P->cn, (unsigned int) P->row_off[P->rn]); 
+#endif
     uint ip, jp, jpe, jps;
     for (ip=0;ip<P->rn;ip++)
     {
 
         jps = P->row_off[ip];
         jpe = P->row_off[ip+1];   
-        printf("js = %u, je = %u\n", jps, jpe);      
+#ifdef PRINT_DEBUG
+        printf("js = %u, je = %u\n", (unsigned int) jps, (unsigned int) jpe);      
         for (jp=jps;jp<jpe;jp++)
         {
-            printf("P[%u,%u] = %lf\n", ip, P->col[jp], P->a[jp]); 
+            printf("P[%u,%u] = %lf\n", (unsigned int) ip, (unsigned int) P->col[jp], P->a[jp]); 
         }
+#endif
     }
 }
 
-void print_coo(struct coo_mat *P)
-{
-    printf("P:\n");
-    printf(" i=%u, j=%u\n", P[i], P[j]);
-    uint ip, jp, nnz
-    for (ip=0;ip<P->rn;ip++)
-    {
-
-        jps = P->row_off[ip];
-        jpe = P->row_off[ip+1];
-        printf("js = %u, je = %u\n", jps, jpe);
-        for (jp=jps;jp<jpe;jp++)
-        {
-            printf("P[%u,%u] = %lf\n", ip, P->col[jp], P->a[jp]);
-        }
-    }
-}
-                
