@@ -916,7 +916,8 @@ static void sp_restrict_unsorted(double *y, uint yn, const int *map_to_y,
   const uint *xe = xi+xn; uint i;
   for(i=0;i<yn;++i) y[i]=0;
   for(;xi!=xe;++xi,++x) {
-    /*This and map_to_y were unsigned (uint). That does not seem to make sense*/
+    /*This and map_to_y were unsigned (uint). That does not seem to make sense
+     * because how can map_to_y[i] be < 0*/
     /*uint i = map_to_y[*xi];*/
     int i = map_to_y[*xi];
     if(i>=0) y[i]=*x;
