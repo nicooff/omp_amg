@@ -377,6 +377,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     double *lam = tmalloc(double, rnf);
     init_array(lam, rnf, 0.);
 
+
     //while(true){
 
         struct csr_mat *Wtmp = tmalloc(struct csr_mat, 1);            
@@ -410,7 +411,6 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 
     // free matrices
     free_csr(&W_skel);
-
 }
 
 /* Solve interpolation weights */
@@ -436,6 +436,7 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     transpose(Arminust, Ar); 
     ar_scal_op(Arminust->a,-1.0,Arminust->row_off[Arminust->rn],mult_op);
     
+    // Matrices W0, Af and Ar should be transposed to get the correct result !
     // au = alpha.*u
     double *zeros = tmalloc(double, rnf);
     init_array(zeros, rnf, 0.0);  
@@ -477,6 +478,7 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
     uint nf = W_skel->rn, nc = W_skel->cn;
     double *au2 = tmalloc(double, nc);
 
+
     memcpy(au2, u, nc*sizeof(double)); // au2 = u
     array_op(u, nc, sqr_op); // au2 = u.^2
     vv_op(au2, alpha, nc, ewmult); // au2 = alpha.*(u.^2)
@@ -499,6 +501,8 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
     double *dlogic = tmalloc(double, nf);
     mask_op(dlogic, d, nf, 0.0, ne);
 
+    struct csr_mat *subS = tmalloc(struct csr_mat, 1);
+
     uint i, ifall = 0;
     for (i=0;i<nf;i++)
     {
@@ -511,7 +515,6 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
 
     if (ifall != 0)
     {
-        struct csr_mat *subS = tmalloc(struct csr_mat, 1);
         sub_mat(subS, S, dlogic, dlogic);
         free_csr(&S);
         S = subS;
@@ -725,36 +728,46 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
             }
         }
     }
-
     if (iftrsp == 0.0) 
     {
         free_csr(&Bt);
     }
 }
-
-/* Transpose csr matrix */
-void transpose(struct csr_mat *At, const struct csr_mat *A)
+void csr2coo(coo_mat *coo_A, struct csr_mat *A)
 {
-    // Build matrix using coordinate list format
+ // Build matrix using coordinate list format
     uint rn = A->rn;
     uint cn = A->cn;
     uint nnz = A->row_off[rn];
 
-    coo_mat *coo_A = tmalloc(coo_mat, nnz);
+    //coo_mat *coo_A = tmalloc(coo_mat, nnz);
 
     uint i, j, je, js;
     for (i=0;i<rn;i++)
     {
         js = A->row_off[i];
-        je = A->row_off[i+1];        
+        je = A->row_off[i+1];
         for (j=js;j<je;j++)
         {
             coo_A[j].i = i;
             coo_A[j].j = A->col[j];
-            coo_A[j].v = A->a[j];  
+            coo_A[j].v = A->a[j];
         }
     }
-    
+}
+/* Transpose csr matrix */
+void transpose(struct csr_mat *At, const struct csr_mat *A)
+{
+
+    uint rn = A->rn;
+    uint nnz = A->row_off[rn];
+
+    coo_mat *coo_A = tmalloc(coo_mat, nnz);
+    uint i, j, je, js;
+    uint cn = A->cn;
+ 
+    csr2coo(coo_A,A);
+
     // Sort matrix by columns then rows
     buffer buf = {0};
     sarray_sort_2(coo_mat, coo_A, nnz, j, 0, i, 0, &buf);
@@ -902,7 +915,7 @@ static void sp_restrict_unsorted(double *y, uint yn, const uint *map_to_y,
   for(i=0;i<yn;++i) y[i]=0;
   for(;xi!=xe;++xi,++x) {
     uint i = map_to_y[*xi];
-    y[i]=*x; // if(i>=0) y[i]=*x; comparison of unsigned expression >= 0 is always true
+    if(i>=0) y[i]=*x;
   }
 }
 
@@ -993,7 +1006,7 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol,
     memcpy(z, M, rn*sizeof(double));
     vv_op(z, r, rn, ewmult);
     
-    // rho_0 = b'*M(b);
+    // rho_0 = rho;
     // rho_stop=tol*tol*rho_0
     double rho = vv_dot(r, z, rn);
 
@@ -1082,6 +1095,8 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol,
    - S[i] = 0 if A->a[i] is "sparsified"
    - S[i] = 1 if A->a[i] is kept
   S needs to be allocated with A->row_off[rn] doubles before the call!
+
+==> Needs to be reimplemented and return the sparsified matrix directly
 */
 void sparsify(double *S, struct csr_mat *A, double tol)
 {
@@ -1633,13 +1648,13 @@ void sub_mat(struct csr_mat *subA, struct csr_mat *A, double* vr, double *vc)
     // Compute number of rows and of non-zero elements for sub-matrix
     for (i=0; i<rn; i++)
     {
-        if (vr[i] != 0.)
+        if (vr[i] != 0)
         {
             subrn += 1;
             uint je=row_off[i+1]; 
             for(j=row_off[i]; j<je; j++)
             {
-                if (vc[col[j]] != 0.)
+                if (vc[col[j]] != 0)
                 {
                     subncol += 1;
                 }
@@ -1677,12 +1692,12 @@ void sub_mat(struct csr_mat *subA, struct csr_mat *A, double* vr, double *vc)
 
     for (i=0; i<rn; i++)
     {
-        if (vr[i] != 0.)
+        if (vr[i] != 0)
         {
             uint je=row_off[i+1]; 
             for(j=row_off[i]; j<je; j++)
             {
-                if (vc[col[j]] != 0.)
+                if (vc[col[j]] != 0)
                 {
                     roffset += 1;
                     *subcol++ = g2lcol[col[j]];
@@ -2140,6 +2155,7 @@ void print_csr(struct csr_mat *P)
     uint ip, jp, jpe, jps;
     for (ip=0;ip<P->rn;ip++)
     {
+
         jps = P->row_off[ip];
         jpe = P->row_off[ip+1];   
         printf("js = %u, je = %u\n", jps, jpe);      
@@ -2149,3 +2165,22 @@ void print_csr(struct csr_mat *P)
         }
     }
 }
+
+void print_coo(struct coo_mat *P)
+{
+    printf("P:\n");
+    printf(" i=%u, j=%u\n", P[i], P[j]);
+    uint ip, jp, nnz
+    for (ip=0;ip<P->rn;ip++)
+    {
+
+        jps = P->row_off[ip];
+        jpe = P->row_off[ip+1];
+        printf("js = %u, je = %u\n", jps, jpe);
+        for (jp=jps;jp<jpe;jp++)
+        {
+            printf("P[%u,%u] = %lf\n", ip, P->col[jp], P->a[jp]);
+        }
+    }
+}
+                
