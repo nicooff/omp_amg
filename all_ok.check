@@ -1,4 +1,3 @@
-Number of threads: 4
 coarse A->rn: 49, A->cn: 49
 Eigenvalues when exiting solve_constraint:
 lam[0] = 0.062453

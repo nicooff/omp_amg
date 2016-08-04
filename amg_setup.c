@@ -1485,7 +1485,7 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
     // array reduction for openmp in mat_max
     /*omp_set_num_threads(68);*/
     const int nthreads = omp_get_max_threads();
-    printf("Number of threads: %d\n", nthreads);
+    /*printf("Number of threads: %d\n", nthreads);*/
     double *mp = malloc(sizeof(double)*cn*nthreads);
 
     // D = diag(A)
