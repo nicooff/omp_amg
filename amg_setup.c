@@ -2172,21 +2172,3 @@ void print_csr(struct csr_mat *P)
     }
 }
 
-void print_coo(struct coo_mat *P)
-{
-    printf("P:\n");
-    printf(" i=%u, j=%u\n", P[i], P[j]);
-    uint ip, jp, nnz
-    for (ip=0;ip<P->rn;ip++)
-    {
-
-        jps = P->row_off[ip];
-        jpe = P->row_off[ip+1];
-        printf("js = %u, je = %u\n", jps, jpe);
-        for (jp=jps;jp<jpe;jp++)
-        {
-            printf("P[%u,%u] = %lf\n", ip, P->col[jp], P->a[jp]);
-        }
-    }
-}
-                
