@@ -49,7 +49,7 @@ static void mv_utt(double *y, uint n, const double *U, const double *x);
 
 static void mv_ut(double *y, uint n, const double *U, const double *x);
 
-static void sp_restrict_unsorted(double *y, uint yn, const uint *map_to_y,
+static void sp_restrict_unsorted(double *y, uint yn, const int *map_to_y,
     uint xn, const uint *xi, const double *x);
 
 static void sp_restrict_sorted(double *y, uint Rn, const uint *Ri, uint xn, 
