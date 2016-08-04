@@ -430,11 +430,19 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     struct csr_mat *W0t = tmalloc(struct csr_mat, 1);
     transpose(W0t, W0);   
 
-    interp(W0t, Af, Arminust, au, lam);
+    //W0 = cinterp(Af,-Ar,alpha.*u,zeros(nf,1),W_skel);
+    interp(W0t, Af, Arminust, au, zeros);
 
     transpose(W0, W0t); 
 
     solve_constraint(lam, W_skel, Af, W0, alpha, u, v, tol);
+    //W = cinterp(Af,-Ar,alpha.*u,lam,W_skel);
+    interp(W0, Af, Arminust, au, lam);
+    printf("Eigenvalues when exiting second interp:\n");
+    uint ii;
+    for (ii=0;ii<rnf;ii++) printf("lam[%u] = %lf\n", ii, lam[ii]);
+
+
     free_csr(&Arminust);
     free_csr(&W0);
     free_csr(&W0t);
@@ -525,9 +533,9 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
     }
 
 // Outpost for checking
-    printf("Eigenvalues when exiting solve_constraint:\n");
-    uint ii;
-    for (ii=0;ii<nf;ii++) printf("lam[%u] = %lf\n", ii, lam[ii]);
+//    printf("Eigenvalues when exiting solve_constraint:\n");
+//    uint ii;
+//    for (ii=0;ii<nf;ii++) printf("lam[%u] = %lf\n", ii, lam[ii]);
 //
 
     free_csr(&S);
