@@ -256,7 +256,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     data->levels = slevel;
 
     // Compute dimensions for remaining arrays
-    uint max_f = 0, max_e = 0;
+/*    uint max_f = 0, max_e = 0;
     for (i=0; i<slevel; i++)
     {
         uint f = data->lvl_offset[i+1] - data->lvl_offset[i];
@@ -290,7 +290,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
     data->timing_n = 0;
     data->timing = tmalloc(double, 6*(slevel-1));
-    init_array(data->timing, 6*(slevel-1), 0.);
+    init_array(data->timing, 6*(slevel-1), 0.);*/
 
 /* Free */
     // Free arrays
