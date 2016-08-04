@@ -43,4 +43,10 @@ serial_amg: serial_amg.o amg_tools.o amg_setup.o fail.o sort.o sarray_sort.o
 clean:
 	-rm serial_amg *.o
 
+check:  all 
+	@echo "Test..."
+	./serial_amg > test.out
+	diff test.out all_ok.check      
+	@echo " -> OK "
+
 .PHONY: clean

@@ -641,9 +641,10 @@ static void sp_add(uint yn, const uint *yi, double *y, double alpha,
   uint iy;
   if(yn==0) return; iy = *yi;
   for(;xi!=xe;++xi,++x) {
+    iy=*(++yi-1);
     uint ix = *xi;
-    while(iy<ix) ++y, iy=*(++yi);
-    *y++ += alpha * (*x), iy=*(++yi);
+    while(iy<ix) ++y, iy=*(++yi-1);
+    *y++ += alpha * (*x);
   }
 }
 
@@ -736,7 +737,7 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
     }
 }
 
-void csr2coo(coo_mat *coo_A, struct csr_mat *A)
+void csr2coo(coo_mat *coo_A, const struct csr_mat *A)
 {
  // Build matrix using coordinate list format
     uint rn = A->rn;
@@ -911,13 +912,16 @@ static void mv_ut(double *y, uint n, const double *U, const double *x)
    map_to_y[i] == k   <->    e_k^t R == e_i^t I
    map_to_y[i] == -1  <->    row i of I not present in R
 --------------------------------------------------------------------------*/
-static void sp_restrict_unsorted(double *y, uint yn, const uint *map_to_y,
+static void sp_restrict_unsorted(double *y, uint yn, const int *map_to_y,
     uint xn, const uint *xi, const double *x)
 {
   const uint *xe = xi+xn; uint i;
   for(i=0;i<yn;++i) y[i]=0;
   for(;xi!=xe;++xi,++x) {
-    uint i = map_to_y[*xi];
+    /*This and map_to_y were unsigned (uint). That does not seem to make sense
+     * because how can map_to_y[i] be < 0*/
+    /*uint i = map_to_y[*xi];*/
+    int i = map_to_y[*xi];
     if(i>=0) y[i]=*x;
   }
 }
@@ -1481,8 +1485,7 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
     // array reduction for openmp in mat_max
     /*omp_set_num_threads(68);*/
     const int nthreads = omp_get_max_threads();
-    const int ithread = omp_get_thread_num();
-    printf("Number of threads: %d\n", nthreads);
+    /*printf("Number of threads: %d\n", nthreads);*/
     double *mp = malloc(sizeof(double)*cn*nthreads);
 
     // D = diag(A)
@@ -2044,7 +2047,7 @@ static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double 
 #pragma omp for
       for(i=0;i<cn;++i) 
       {
-        uint j;
+        int j;
         for(j=0;j<nthreads;++j) 
           yp[j*cn+i]=-DBL_MAX;
       }
