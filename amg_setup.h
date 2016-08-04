@@ -184,7 +184,7 @@ typedef struct {coo_mat coo_A; uint dest;} coo_mat_dest;
 /* Build coo matrix from csr format */
 void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz);
 /* Build csr matrix from coo format */
-void csr2coo(coo_mat *coo_A, struct csr_mat *A);
+void csr2coo(coo_mat *coo_A, const struct csr_mat *A);
 
 /* Function to build sparse matrix */
 void build_csr(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 

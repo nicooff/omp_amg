@@ -641,9 +641,10 @@ static void sp_add(uint yn, const uint *yi, double *y, double alpha,
   uint iy;
   if(yn==0) return; iy = *yi;
   for(;xi!=xe;++xi,++x) {
+    iy=*(++yi-1);
     uint ix = *xi;
-    while(iy<ix) ++y, iy=*(++yi);
-    *y++ += alpha * (*x), iy=*(++yi);
+    while(iy<ix) ++y, iy=*(++yi-1);
+    *y++ += alpha * (*x);
   }
 }
 
