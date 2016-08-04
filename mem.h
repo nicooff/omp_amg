@@ -30,12 +30,7 @@
 #  define PRINT_MALLOCS 0
 #else
 #  include <stdio.h>
-#  ifndef comm_gbl_id
-#    define comm_gbl_id PREFIXED_NAME(comm_gbl_id)
-#    define comm_gbl_np PREFIXED_NAME(comm_gbl_np)
 #    include "types.h"
-     extern uint comm_gbl_id, comm_gbl_np;
-#  endif
 #endif
 
 /*--------------------------------------------------------------------------
@@ -46,8 +41,8 @@ static inline void *smalloc(size_t size, const char *file, unsigned line)
 {
   void *restrict res = malloc(size);
   #if PRINT_MALLOCS
-  fprintf(stdout,"MEM: proc %04d: %p = malloc(%ld) @ %s(%u)\n",
-          (int)comm_gbl_id,res,(long)size,file,line), fflush(stdout);
+  fprintf(stdout,"MEM: %p = malloc(%ld) @ %s(%u)\n",
+          res,(long)size,file,line), fflush(stdout);
   #endif
   if(!res && size)
     fail(1,file,line,"allocation of %ld bytes failed\n",(long)size);
@@ -59,8 +54,8 @@ static inline void *scalloc(
 {
   void *restrict res = calloc(nmemb, size);
   #if PRINT_MALLOCS
-  fprintf(stdout,"MEM: proc %04d: %p = calloc(%ld) @ %s(%u)\n",
-          (int)comm_gbl_id,res,(long)size*nmemb,file,line), fflush(stdout);
+  fprintf(stdout,"MEM: %p = calloc(%ld) @ %s(%u)\n",
+          res,(long)size*nmemb,file,line), fflush(stdout);
   #endif
   if(!res && nmemb)
     fail(1,file,line,"allocation of %ld bytes failed\n",
@@ -75,13 +70,13 @@ static inline void *srealloc(
   #if PRINT_MALLOCS
   if(res!=ptr) {
     if(ptr)
-      fprintf(stdout,"MEM: proc %04d: %p freed by realloc @ %s(%u)\n",
-              (int)comm_gbl_id,ptr,file,line), fflush(stdout);
-    fprintf(stdout,"MEM: proc %04d: %p = realloc of %p to %lu @ %s(%u)\n",
-            (int)comm_gbl_id,res,ptr,(long)size,file,line), fflush(stdout);
+      fprintf(stdout,"MEM: %p freed by realloc @ %s(%u)\n",
+              ptr,file,line), fflush(stdout);
+    fprintf(stdout,"MEM: %p = realloc of %p to %lu @ %s(%u)\n",
+            res,ptr,(long)size,file,line), fflush(stdout);
   } else
-    fprintf(stdout,"MEM: proc %04d: %p realloc'd to %lu @ %s(%u)\n",
-            (int)comm_gbl_id,res,(long)size,file,line), fflush(stdout);
+    fprintf(stdout,"MEM: %p realloc'd to %lu @ %s(%u)\n",
+            res,(long)size,file,line), fflush(stdout);
   #endif
   if(!res && size)
     fail(1,file,line,"allocation of %ld bytes failed\n",(long)size);
@@ -99,8 +94,8 @@ static inline void *srealloc(
 static inline void sfree(void *restrict ptr, const char *file, unsigned line)
 {
   free(ptr);
-  fprintf(stdout,"MEM: proc %04d: %p freed @ %s(%u)\n",
-          (int)comm_gbl_id,ptr,file,line), fflush(stdout);
+  fprintf(stdout,"MEM: %p freed @ %s(%u)\n",
+          ptr,file,line), fflush(stdout);
 }
 #define free(x) sfree(x,__FILE__,__LINE__)
 #endif
