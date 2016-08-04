@@ -86,7 +86,14 @@ double apply_M(double *z, const double alpha, const double *y,
     const uint je=row_off[i+1]; 
     double t = 0;
     for(j=row_off[i]; j<je; ++j) t += (*a++) * x[*col++];
-    *z++ = alpha*(*y++) + beta*t;
+    if (alpha == 0. || y == NULL) 
+    { 
+        *z++ = beta*t;
+    }
+    else 
+    {
+        *z++ = alpha*(*y++) + beta*t;
+    }
   }
   return get_time()-t0;
 }

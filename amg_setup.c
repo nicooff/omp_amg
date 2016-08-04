@@ -316,7 +316,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     // Dimensions of the matrices
     uint rnf = Af->rn;//, cnf = Af->cn; Unused
     uint rnc = Ac->rn, cnc = Ac->cn;
-    // uint rnr = Ar->rn, cnr = Ar->cn;
+    uint rnr = Ar->rn, cnr = Ar->cn;
     // rnr = rnf and cnr = cnc
 
     // If nc==0
@@ -336,12 +336,12 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 
     // uc = ones(nf, 1) /!\ in the Matlab code, uc could be diffent from ones
     //                      though this is the default value.
-    double *uc = tmalloc(double, cnc);
-    init_array(uc, cnc, 1.);
+    double *uc = tmalloc(double, cnr);
+    init_array(uc, cnr, 1.);
 
     // v = pcg(Af,full(-Ar*uc),d,1e-16);
     double *r = tmalloc(double, rnf); 
-    apply_M(r, 0, uc, -1, Ar, uc);
+    apply_M(r, 0, NULL, -1, Ar, uc);
 
     double *v = tmalloc(double, rnf); 
 
@@ -717,7 +717,7 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
         jea = A->row_off[ia+1];
         X->row_off[ia+1] = X->row_off[ia];  
         for (ja=jsa;ja<jea;ja++) x[A->col[ja]] = A->a[ja];
-        apply_M(y, 0.0, x, 1.0, Bt, x);
+        apply_M(y, 0.0, NULL, 1.0, Bt, x);
     
         for (ib=0;ib<rnbt;ib++)
         {
@@ -735,6 +735,7 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
         free_csr(&Bt);
     }
 }
+
 void csr2coo(coo_mat *coo_A, const struct csr_mat *A)
 {
  // Build matrix using coordinate list format
@@ -1054,7 +1055,7 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol,
         vv_op(p, z, rn, plus);
 
         // w = A(p); (A(p) = A*p)
-        apply_M(w, 0, p, 1, A, p);
+        apply_M(w, 0, NULL, 1, A, p);
 
         // alpha = rho / (p'*w);
         alpha = vv_dot(p, w, rn);
@@ -1283,7 +1284,7 @@ uint lanczos(double **lambda, struct csr_mat *A)
         ar_scal_op(qk, 1./beta, rn, mult_op);
 
         // Aqk = A*qk
-        apply_M(Aqk, 0, qk, 1, A, qk);
+        apply_M(Aqk, 0, NULL, 1, A, qk);
 
         // alpha = qk'*Aqk
         double alpha = vv_dot(qk, Aqk, rn); 
@@ -1534,15 +1535,15 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
     while (1)
     {
         // w1 = vf.*(S*(vf.*(S*vf)))
-        apply_M(g, 0, vf, 1., S, vf); // g = S*vf 
+        apply_M(g, 0, NULL, 1., S, vf); // g = S*vf 
         vv_op(g, vf, cn, ewmult); // g = vf.*g
-        apply_M(w1, 0, g, 1., S, g); // w1 = S*g
+        apply_M(w1, 0, NULL, 1., S, g); // w1 = S*g
         vv_op(w1, vf, cn, ewmult); // w1 = vf.*w1
 
         // w2 = vf.*(S *(vf.*(S*w1)))
-        apply_M(w2, 0, w1, 1., S, w1); // w2 = S*w1
+        apply_M(w2, 0, NULL, 1., S, w1); // w2 = S*w1
         vv_op(w2, vf, cn, ewmult); // w2 = vf.*w2
-        apply_M(tmp, 0, w2, 1., S, w2); // tmp = S*w2
+        apply_M(tmp, 0, NULL, 1., S, w2); // tmp = S*w2
         memcpy(w2, tmp, cn*sizeof(double)); // tmp = w2
         vv_op(w2, vf, cn, ewmult); // w2 = vf.*w2
 
