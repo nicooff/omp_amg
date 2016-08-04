@@ -3,7 +3,7 @@
 
 /* Main function build a structure crs_data required to solve AMG */
 void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
-    struct crs_data *data);
+    struct amg_setup_data *data);
 
 /*******************************************************************************
 * AMG functions
@@ -57,8 +57,9 @@ static void sp_restrict_sorted(double *y, uint Rn, const uint *Ri, uint xn,
 
 void transpose(struct csr_mat *At, const struct csr_mat *A);
 
-void solve_constraint(double *lam, struct csr_mat *W_skel, struct csr_mat *Af,
-struct csr_mat *W0, double *alpha, double *u, double *v, double tol);
+void solve_constraint(double *lam, struct csr_mat *W_skel,
+    struct csr_mat *W_skelt, struct csr_mat *Aft, struct csr_mat *W0, 
+    double *alpha, double *u, double *v, double tol);
 
 void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B, 
     double iftrsp);
