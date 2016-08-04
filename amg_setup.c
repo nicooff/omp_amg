@@ -25,9 +25,9 @@
     - Author of the original version (Matlab): James Lottes
     - Author of the serial version in C: Nicolas Offermans
 
-    - Last update: 3 August, 2016
+    - Last update: 4 August, 2016
 
-    - Status: finished solve_constraint.
+    - Status: finished solve_weights.
 
 */
 
@@ -49,7 +49,7 @@
 */
 
 void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
-    struct crs_data *data)
+    struct amg_setup_data *data)
 /*    Build data, the "struct crs_data" defined in amg_setup.h that is required
       to execute the AMG solver. */
 {   
@@ -69,7 +69,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     uint rn = A->rn;
     uint cn = A->cn;
 
-    data->tni = 1./rn;
+//    data->tni = 1./rn;
 
     // Initial size for number of sublevels
     // If more levels than this, realloction is required!
@@ -80,9 +80,9 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
     data->Dff = tmalloc(double, rn);
 
-    data->Q_W = tmalloc(struct Q, initsize);
-    data->Q_AfP = tmalloc(struct Q, initsize);
-    data->Q_Aff = tmalloc(struct Q, initsize);
+//    data->Q_W = tmalloc(struct Q, initsize);
+//    data->Q_AfP = tmalloc(struct Q, initsize);
+//    data->Q_Aff = tmalloc(struct Q, initsize);
 
     data->W = tmalloc(struct csr_mat, initsize);
     data->AfP = tmalloc(struct csr_mat, initsize);
@@ -116,9 +116,9 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         data->cheb_rho = trealloc(double, data->cheb_rho, memsize); 
         data->lvl_offset = trealloc(uint, data->lvl_offset, memsize);
 
-        data->Q_W = trealloc(struct Q, data->Q_W, memsize);
-        data->Q_AfP = trealloc(struct Q, data->Q_AfP, memsize);
-        data->Q_Aff = trealloc(struct Q, data->Q_Aff, memsize);
+//        data->Q_W = trealloc(struct Q, data->Q_W, memsize);
+//        data->Q_AfP = trealloc(struct Q, data->Q_AfP, memsize);
+//        data->Q_Aff = trealloc(struct Q, data->Q_Aff, memsize);
 
         data->W = trealloc(struct csr_mat, data->W, memsize);
         data->AfP = trealloc(struct csr_mat, data->AfP, memsize);
@@ -224,7 +224,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     }
         
     data->Aff = Af;
-    data->Q_Aff->nloc = Af->cn;
+//    data->Q_Aff->nloc = Af->cn;
 
 /* Interpolation */
     // Afc = A(F, C)
@@ -236,9 +236,9 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     sub_mat(Ac, A, vc, vc);
 
     // Letter c denotes dimensions for Ac
-    uint rnc = Ac->rn;
-    uint cnc = Ac->cn;
-    uint ncolc = Ac->row_off[rnc];
+    //uint rnc = Ac->rn; Unused
+    //uint cnc = Ac->cn; Unused
+    //uint ncolc = Ac->row_off[rnc]; Unused
 
     // W
     struct csr_mat *W = tmalloc(struct csr_mat, 1);
@@ -314,7 +314,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 {
 
     // Dimensions of the matrices
-    uint rnf = Af->rn, cnf = Af->cn;
+    uint rnf = Af->rn;//, cnf = Af->cn; Unused
     uint rnc = Ac->rn, cnc = Ac->cn;
     // uint rnr = Ar->rn, cnr = Ar->cn;
     // rnr = rnf and cnr = cnc
@@ -371,14 +371,32 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     struct csr_mat *W_skel = tmalloc(struct csr_mat, 1);
     min_skel(W_skel, ArD);
 
-    // Initialize eigenvalues array and matrix W0
+    free_csr(&ArD);
+
+    // Initialize eigenvalues
     double *lam = tmalloc(double, rnf);
     init_array(lam, rnf, 0.);
-    struct csr_mat *W0 = tmalloc(struct csr_mat, 1);
 
     //while(true){
-            
-        solve_weights(W, W0, lam, W_skel, Af, Ar, rnc, Dc, uc, v, tol);        
+
+        struct csr_mat *Wtmp = tmalloc(struct csr_mat, 1);            
+        struct csr_mat *W0   = tmalloc(struct csr_mat, 1);
+
+        solve_weights(Wtmp, W0, lam, W_skel, Af, Ar, rnc, Dc, uc, v, tol);
+        
+        struct csr_mat *Arhat0 = tmalloc(struct csr_mat, 1);
+        struct csr_mat *Arhat  = tmalloc(struct csr_mat, 1);
+
+        mxm(Arhat0, Af, W0  , 0.0);
+        mxm(Arhat , Af, Wtmp, 0.0);
+        
+
+        print_csr(Arhat);
+
+        free_csr(&Wtmp); 
+        free_csr(&W0); 
+        free_csr(&Arhat0); 
+        free_csr(&Arhat); 
 
     //}
 
@@ -390,10 +408,9 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     free(v);
     free(r);
 
-    // free Arcpy
-    free_csr(&ArD);
-    // free W_skel
+    // free matrices
     free_csr(&W_skel);
+
 }
 
 /* Solve interpolation weights */
@@ -402,77 +419,74 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     double *alpha, double *u, double *v, double tol)
 {
     // Dimensions of the matrices
-    uint rnf = Af->rn, cnf = Af->cn;
-    uint rnr = Ar->rn, cnr = Ar->cn;
+    uint rnf = Af->rn; //, cnf = Af->cn; Unused
+    //uint rnr = Ar->rn, cnr = Ar->cn; Unused
 
     // au = alpha.*u
     double *au = tmalloc(double, rnc);
     memcpy(au, alpha, rnc*sizeof(double));
     vv_op(au, u, rnc, ewmult);
 
-    // W0 is initialised by W_skel
-    copy_csr(W0, W_skel);
-
-    // We need -Ar interp: Arminus = -Ar
-    struct csr_mat *Arminus = tmalloc(struct csr_mat, 1);
-    copy_csr(Arminus, Ar);
-    ar_scal_op(Arminus->a,-1,Ar->row_off[rnr],mult_op);
-    
-    // Matrices W0, Af and Ar should be transposed to get the correct result !
-    // au = alpha.*u
-    double *zeros = tmalloc(double, rnc);
-    init_array(zeros, rnc, 0.0);
-
-    struct csr_mat *Arminust = tmalloc(struct csr_mat, 1);
-    transpose(Arminust, Arminus); 
-    free_csr(&Arminus); 
-
+    // W0t is initialised with W_skel'
     struct csr_mat *W0t = tmalloc(struct csr_mat, 1);
-    transpose(W0t, W0);   
+    transpose(W0t, W_skel); 
 
-    interp(W0t, Af, Arminust, au, lam);
+    // Arminust = -Ar'
+    struct csr_mat *Arminust = tmalloc(struct csr_mat, 1);
+    transpose(Arminust, Ar); 
+    ar_scal_op(Arminust->a,-1.0,Arminust->row_off[Arminust->rn],mult_op);
+    
+    // au = alpha.*u
+    double *zeros = tmalloc(double, rnf);
+    init_array(zeros, rnf, 0.0);  
+
+    // Matrices W0, Af and Ar have to be transposed
+    // Af is assumed symmetric so not transposed!
+    interp(W0t, Af, Arminust, au, zeros);
 
     transpose(W0, W0t); 
 
-    solve_constraint(lam, W_skel, Af, W0, alpha, u, v, tol);
-    free_csr(&Arminust);
-    free_csr(&W0);
     free_csr(&W0t);
+
+    // Matrices W_skel has to be transposed
+    struct csr_mat *W_skelt = tmalloc(struct csr_mat, 1);
+    transpose(W_skelt, W_skel); 
+
+    solve_constraint(lam, W_skel, W_skelt, Af, W0, alpha, u, v, tol);
+
+    // Wt is initialised by W_skel'
+    struct csr_mat *Wt = W_skelt;
+
+    interp(Wt, Af, Arminust, au, lam);
+
+    free_csr(&Arminust);
+
+    transpose(W, Wt);
+
+    free_csr(&Wt); 
 }
 
-/* Solve constraint 
-   W_skelt and Aft are trasposed */
-void solve_constraint(double *lam, struct csr_mat *W_skel, struct csr_mat *Af,
-struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
+/* Solve constraint
+   This function requires both W_skel and W_skel' so both are given as input
+   as W_skel' is already available in solve_weights and we don't want to
+   recompute it. */
+void solve_constraint(double *lam, struct csr_mat *W_skel,
+    struct csr_mat *W_skelt, struct csr_mat *Af, struct csr_mat *W0, 
+    double *alpha, double *u, double *v, double tol)
 {
     uint nf = W_skel->rn, nc = W_skel->cn;
     double *au2 = tmalloc(double, nc);
-    struct csr_mat *S = tmalloc(struct csr_mat, 1);
 
     memcpy(au2, u, nc*sizeof(double)); // au2 = u
     array_op(u, nc, sqr_op); // au2 = u.^2
     vv_op(au2, alpha, nc, ewmult); // au2 = alpha.*(u.^2)
 
-    // Need to initialize S before calling interp_lmop
-    mxm(S, W_skel, W_skel, 1.0);
+    // Need to initialize S by (W_skel*W_skel') before calling interp_lmop
+    struct csr_mat *S = tmalloc(struct csr_mat, 1);
+    mxm(S, W_skel, W_skel, 1.0);  
     
-    // Transpose matrices before calling interp_lmop
-    struct csr_mat *St = tmalloc(struct csr_mat, 1);
-    transpose(St, S);
-
-    struct csr_mat *Aft = tmalloc(struct csr_mat, 1);
-    transpose(Aft, Af);      
-
-    struct csr_mat *W_skelt = tmalloc(struct csr_mat, 1);
-    transpose(W_skelt, W_skel); 
-    
-    interp_lmop(St, Aft, au2, W_skelt);
-
-    transpose(S, St);
-
-    free_csr(&St);
-    free_csr(&Aft);
-    free_csr(&W_skelt);
+    // S and Af are assumed to be symmetric -> not transposed
+    interp_lmop(S, Af, au2, W_skelt);
 
     double *resid = tmalloc(double, nf);
 
@@ -484,8 +498,6 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
 
     double *dlogic = tmalloc(double, nf);
     mask_op(dlogic, d, nf, 0.0, ne);
-
-    struct csr_mat *subS = tmalloc(struct csr_mat, 1);
 
     uint i, ifall = 0;
     for (i=0;i<nf;i++)
@@ -499,8 +511,9 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
 
     if (ifall != 0)
     {
+        struct csr_mat *subS = tmalloc(struct csr_mat, 1);
         sub_mat(subS, S, dlogic, dlogic);
-        free_csr(S);
+        free_csr(&S);
         S = subS;
     }
 
@@ -540,7 +553,7 @@ struct csr_mat *W0, double *alpha, double *u, double *v, double tol)
 
 /* Interp_lmop 
    St, At and W_skelt are assumed to be transposed
-   St needs to be initialized to X_skelt! */
+   St needs to be initialized to (W_skel*W_skel')'! */
 int interp_lmop(struct csr_mat *St, struct csr_mat *At, double *u,
     struct csr_mat *W_skelt)
 {
@@ -641,11 +654,15 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
     double iftrsp)
 {
     uint rna = A->rn, cna = A->cn;
-    uint rnb = B->rn, cnb = B->cn;
+    // uint rnb = B->rn, cnb = B->cn; Unused
 
     // Transpose B if necessary
     struct csr_mat *Bt;
-    if (iftrsp == 0.0) transpose(Bt, B);
+    if (iftrsp == 0.0) 
+    {
+        Bt = tmalloc(struct csr_mat, 1);
+        transpose(Bt, B);
+    }
     else Bt = B;
 
     uint rnbt = Bt->rn, cnbt = Bt->cn;
@@ -708,6 +725,11 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
             }
         }
     }
+
+    if (iftrsp == 0.0) 
+    {
+        free_csr(&Bt);
+    }
 }
 
 /* Transpose csr matrix */
@@ -759,12 +781,8 @@ void transpose(struct csr_mat *At, const struct csr_mat *A)
         if (i == nnz-1) At->row_off[counter] = nnz;
     
         row_prev = row_cur;
-        
-        // col
-        At->col[i] = coo_A[i].i;
-
-        // a
-        At->a[i] = coo_A[i].v;
+        At->col[i] = coo_A[i].i; // col
+        At->a[i] = coo_A[i].v;   // a
     }
 
     free(coo_A);
@@ -776,12 +794,12 @@ void transpose(struct csr_mat *At, const struct csr_mat *A)
 void interp(struct csr_mat *Wt, struct csr_mat *At, struct csr_mat *Bt, 
     double *u, double *lambda)
 {
-    uint nf = Wt->rn, nc = Wt->cn;
+    uint nf = Wt->rn; //, nc = Wt->cn;
     uint max_nz = 0, max_Q;
     uint i;
 
     double *sqv1, *sqv2;
-    double *Q, *QQt;
+    double *Q;
 
     for (i=0;i<nf;i++)
     {
@@ -884,7 +902,7 @@ static void sp_restrict_unsorted(double *y, uint yn, const uint *map_to_y,
   for(i=0;i<yn;++i) y[i]=0;
   for(;xi!=xe;++xi,++x) {
     uint i = map_to_y[*xi];
-    if(i>=0) y[i]=*x;
+    y[i]=*x; // if(i>=0) y[i]=*x; comparison of unsigned expression >= 0 is always true
   }
 }
 
@@ -975,7 +993,7 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol,
     memcpy(z, M, rn*sizeof(double));
     vv_op(z, r, rn, ewmult);
     
-    // rho_0 = rho;
+    // rho_0 = b'*M(b);
     // rho_stop=tol*tol*rho_0
     double rho = vv_dot(r, z, rn);
 
@@ -1064,13 +1082,11 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol,
    - S[i] = 0 if A->a[i] is "sparsified"
    - S[i] = 1 if A->a[i] is kept
   S needs to be allocated with A->row_off[rn] doubles before the call!
-
-==> Needs to be reimplemented and return the sparsified matrix directly
 */
 void sparsify(double *S, struct csr_mat *A, double tol)
 {
     uint rn = A->rn;
-    uint cn = A->cn;
+    // uint cn = A->cn; Unused
     uint *row_off = A->row_off;
     uint *col = A->col;
     double *a = A->a;
@@ -1617,13 +1633,13 @@ void sub_mat(struct csr_mat *subA, struct csr_mat *A, double* vr, double *vc)
     // Compute number of rows and of non-zero elements for sub-matrix
     for (i=0; i<rn; i++)
     {
-        if (vr[i] != 0)
+        if (vr[i] != 0.)
         {
             subrn += 1;
             uint je=row_off[i+1]; 
             for(j=row_off[i]; j<je; j++)
             {
-                if (vc[col[j]] != 0)
+                if (vc[col[j]] != 0.)
                 {
                     subncol += 1;
                 }
@@ -1661,12 +1677,12 @@ void sub_mat(struct csr_mat *subA, struct csr_mat *A, double* vr, double *vc)
 
     for (i=0; i<rn; i++)
     {
-        if (vr[i] != 0)
+        if (vr[i] != 0.)
         {
             uint je=row_off[i+1]; 
             for(j=row_off[i]; j<je; j++)
             {
-                if (vc[col[j]] != 0)
+                if (vc[col[j]] != 0.)
                 {
                     roffset += 1;
                     *subcol++ = g2lcol[col[j]];
@@ -1688,7 +1704,7 @@ void sub_vec(double *a, double *b, double* v, uint n)
     uint i;    
     for (i=0; i<n; i++)
     {
-        if (v[i] != 0)
+        if (v[i] != 0.)
         {
             *a++ = b[i];  
         }
@@ -1703,7 +1719,7 @@ void sub_slong(slong *a, slong *b, double* v, uint n)
     uint i;    
     for (i=0; i<n; i++)
     {
-        if (v[i] != 0)
+        if (v[i] != 0.)
         {
             *a++ = b[i];  
         }

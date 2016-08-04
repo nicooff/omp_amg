@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
         Aj[i] = (uint)Ajd[i]-1;
     }
 
-    struct crs_data *data = tmalloc(struct crs_data, 1);
+    struct amg_setup_data *data = tmalloc(struct amg_setup_data, 1);
     amg_setup(n-1, Ai, Aj, Av, data);
 
     free(v);

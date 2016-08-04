@@ -21,17 +21,17 @@ struct labelled_rid {
   struct rid rid; ulong id;
 };
 
-struct crs_data {
-  struct gs_data *gs_top;
-  uint un, *umap; /* number of unique id's on this proc, map to user ids */
-  double tni; /* 1 / (total number of unique ids)  ... for computing mean */
+struct amg_setup_data {
+//  struct gs_data *gs_top;
+//  uint un, *umap; /* number of unique id's on this proc, map to user ids */
+//  double tni; /* 1 / (total number of unique ids)  ... for computing mean */
   int null_space;
   unsigned levels;
   unsigned *cheb_m; /* cheb_m  [levels-1] : smoothing steps */
   double *cheb_rho; /* cheb_rho[levels-1] : spectral radius of smoother */
   uint *lvl_offset;
   double *Dff;      /* diagonal smoother, F-relaxation */
-  struct Q *Q_W, *Q_AfP, *Q_Aff;
+//  struct Q *Q_W, *Q_AfP, *Q_Aff;
   struct csr_mat *W, *AfP, *Aff;
   double *b, *x, *c, *c_old, *r, *buf;
   double *timing; uint timing_n;
