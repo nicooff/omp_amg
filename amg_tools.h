@@ -33,8 +33,8 @@ struct amg_setup_data {
   double *Dff;      /* diagonal smoother, F-relaxation */
 //  struct Q *Q_W, *Q_AfP, *Q_Aff;
   struct csr_mat *W, *AfP, *Aff;
-  double *b, *x, *c, *c_old, *r, *buf;
-  double *timing; uint timing_n;
+//  double *b, *x, *c, *c_old, *r, *buf;
+//  double *timing; uint timing_n;
 };
 
 uint *assign_dofs(struct array *const uid,

@@ -25,9 +25,9 @@
     - Author of the original version (Matlab): James Lottes
     - Author of the serial version in C: Nicolas Offermans
 
-    - Last update: 4 August, 2016
+    - Last update: 5 August, 2016
 
-    - Status: finished solve_weights.
+    - Status: finished mpm.
 
 */
 
@@ -46,6 +46,7 @@
     TODO: 
         - properly check anyvc (Done but not tested)
         - write sym_sparsify
+        - possible memory problem with S and subS in solve_constraint
 */
 
 void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
@@ -195,7 +196,8 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
         ar_scal_op(D, 2./(a+b), rnf, mult_op);
         data->Dff += offset;
-        data->Dff = D;        
+        memcpy(data->Dff, D, rnf);      
+        data->Dff -= offset;  
 
         double rho = (b-a)/(b+a);
         data->cheb_rho[slevel] = rho;
@@ -210,20 +212,22 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         //sym_sparsify(Sf, DhAfDh, (1.-rho)*(.5*gap)/(2.+.5*gap)); => not implemented
 
         free(Dh);    
-        free(lambda);        
+        free(lambda);
+        free_csr(&DhAfDh);
     }
     else
     {
         gap = 0;
 
         data->Dff += offset;
-        data->Dff = D;  
+        memcpy(data->Dff, D, rnf);      
+        data->Dff -= offset;  
 
         data->cheb_rho[slevel] = 0;
         data->cheb_m[slevel] = 1;
     }
         
-    data->Aff = Af;
+//    data->Aff = Af;
 //    data->Q_Aff->nloc = Af->cn;
 
 /* Interpolation */
@@ -294,6 +298,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
 /* Free */
     // Free arrays
+    free(vf);
     free(vc);
     free(af);
     free(s);
@@ -303,8 +308,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     free_csr(&Af);
     free_csr(&Afc);
     free_csr(&Ac);
-    //free_csr(&W);
-
+    free_csr(&W);
     free_csr(&A);
 }
 
@@ -405,6 +409,8 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 
         print_csr(Arhat);
 
+        copy_csr(W,Wtmp);
+
         // free matrices
         free_csr(&W_skel);
         free_csr(&Wtmp); 
@@ -421,6 +427,8 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     free(uc);
     free(v);
     free(r);
+    free(b);
+    free(lam);
 }
 
 /* Solve interpolation weights */
@@ -475,6 +483,10 @@ void solve_weights(struct csr_mat *W, struct csr_mat *W0, double *lam,
     transpose(W, Wt);
 
     free_csr(&Wt); 
+
+    // Free arrays
+    free(au);
+    free(zeros);
 }
 
 /* Solve constraint
@@ -487,7 +499,6 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
 {
     uint nf = W_skel->rn, nc = W_skel->cn;
     double *au2 = tmalloc(double, nc);
-
 
     memcpy(au2, u, nc*sizeof(double)); // au2 = u
     array_op(u, nc, sqr_op); // au2 = u.^2
@@ -545,9 +556,10 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
 
     pcg(x, S, q, d, tol, resid);
 
+    double *xp = x;
     for (i=0;i<nf;i++)
     {
-        if (dlogic[i] != 0.) lam[i] = *x++;
+        if (dlogic[i] != 0.) lam[i] = *xp++;
     }
 
 // Outpost for checking
@@ -559,9 +571,12 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
 //
 
     free_csr(&S);
+    free(subS);
     free(au2);
     free(resid);
     free(d);
+    free(q);
+    free(x);
     free(dlogic);
     free(lam_cond);
 }
@@ -857,6 +872,10 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
     {
         free_csr(&Bt);
     }
+
+    // Free arrays
+    free(x);
+    free(y);
 }
 
 void csr2coo(coo_mat *coo_A, const struct csr_mat *A)
@@ -1069,7 +1088,6 @@ static void sp_restrict_sorted(double *y, uint Rn, const uint *Ri, uint xn,
   while(y!=ye) *y++ = 0;
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 
 /* Minimum skeleton */
@@ -1111,7 +1129,9 @@ void min_skel(struct csr_mat *W_skel, struct csr_mat *R)
 	    W_skel->col[i] = j;
 	    W_skel->row_off[i] = i;
     }
-    W_skel->row_off[rn] = rn;    
+    W_skel->row_off[rn] = rn;  
+    
+    free(y_max);  
 }
 
 /* Preconditioned conjugate gradient */
@@ -2135,7 +2155,7 @@ void copy_csr(struct csr_mat *B, struct csr_mat *A)
 /* Free csr matrices */
 void free_csr(struct csr_mat **A)
 {
-     if (A) 
+    if (A) 
     {
         free((*A)->row_off);
         free((*A)->col);
@@ -2143,6 +2163,28 @@ void free_csr(struct csr_mat **A)
         free(*A);
         *A = NULL;
      }
+}
+
+/* Free data struct 
+   NOT WORKING */
+void free_data(struct amg_setup_data **data)
+{
+    if(data)
+    {
+        free((*data)->cheb_m);
+        free((*data)->cheb_rho);
+        free((*data)->lvl_offset);
+        free((*data)->Dff);        
+/*        uint i;
+        for (i=0;i<(*data)->levels;i++)
+        {
+            free_csr(&(*data)->W); (*data)->W++;
+            free_csr(&(*data)->AfP); (*data)->AfP++;
+            free_csr(&(*data)->Aff); (*data)->Aff++;
+        }*/
+        free(*data);
+        *data = NULL;
+    }
 }
 
 // C-MEX FUNCTIONS TRANSFORMED TO C
@@ -2205,7 +2247,6 @@ void build_csr(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj,
 {
     // Build matrix in coord. list format
     coo_mat *coo_A = tmalloc(coo_mat, n);
-    coo_A = tmalloc(coo_mat,n);
 
     uint i;
     for (i=0;i<n;i++)

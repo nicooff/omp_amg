@@ -172,10 +172,16 @@ void diagcsr_op(struct csr_mat *A, double *D, enum diagcsr_ops op);
 /*******************************************************************************
 * Others
 *******************************************************************************/
-// Copy csr matrix B <-- A
+// Allocate memory for matrix A
 void malloc_csr(struct csr_mat *A, uint rn, uint cn, uint nnz);
+// Copy csr matrix B <-- A
 void copy_csr(struct csr_mat *B, struct csr_mat *A);
+// Free matrix A
 void free_csr(struct csr_mat **A);
+
+// Free data strucutre
+//   NOT WORKING
+void free_data(struct amg_setup_data **data);
 
 /*******************************************************************************
 * Functions used to build sparse matrix and id array for gs
