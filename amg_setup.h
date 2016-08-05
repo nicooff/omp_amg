@@ -64,6 +64,9 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
 void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B, 
     double iftrsp);
 
+void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
+    struct csr_mat *B);
+
 int interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
     struct csr_mat *W_skel);
 
@@ -181,10 +184,11 @@ void free_csr(struct csr_mat **A);
 typedef struct {uint i, j; double v;} coo_mat; 
 typedef struct {coo_mat coo_A; uint dest;} coo_mat_dest; 
 
-/* Build coo matrix from csr format */
+/* Build coo matrix from csr format 
+   Matrix coo_A is sorted at output */
 void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz);
 /* Build csr matrix from coo format */
-void csr2coo(coo_mat *coo_A, struct csr_mat *A);
+void csr2coo(coo_mat *coo_A, const struct csr_mat *A);
 
 /* Function to build sparse matrix */
 void build_csr(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 

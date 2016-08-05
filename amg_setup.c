@@ -316,7 +316,8 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     // Dimensions of the matrices
     uint rnf = Af->rn;//, cnf = Af->cn; Unused
     uint rnc = Ac->rn, cnc = Ac->cn;
-    uint rnr = Ar->rn, cnr = Ar->cn;
+    //uint rnr = Ar->rn; Unused
+    uint cnr = Ar->cn;
     // rnr = rnf and cnr = cnc
 
     // If nc==0
@@ -377,23 +378,35 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     double *lam = tmalloc(double, rnf);
     init_array(lam, rnf, 0.);
 
+        struct csr_mat *Wtmp, *W0, *AfW, *Arhat0, *Arhat;
 
     //while(true){
 
-        struct csr_mat *Wtmp = tmalloc(struct csr_mat, 1);            
-        struct csr_mat *W0   = tmalloc(struct csr_mat, 1);
+        Wtmp = tmalloc(struct csr_mat, 1);            
+        W0   = tmalloc(struct csr_mat, 1);
 
         solve_weights(Wtmp, W0, lam, W_skel, Af, Ar, rnc, Dc, uc, v, tol);
         
-        struct csr_mat *Arhat0 = tmalloc(struct csr_mat, 1);
-        struct csr_mat *Arhat  = tmalloc(struct csr_mat, 1);
+        AfW = tmalloc(struct csr_mat, 1);
+        Arhat0 = tmalloc(struct csr_mat, 1);
 
-        mxm(Arhat0, Af, W0  , 0.0);
-        mxm(Arhat , Af, Wtmp, 0.0);
+        mxm(AfW, Af, W0  , 0.0);
+        mpm(Arhat0, 1., AfW, 1., Ar);
+        free_csr(&AfW);
+
+        print_csr(Arhat0);
         
+        AfW = tmalloc(struct csr_mat, 1);
+        Arhat = tmalloc(struct csr_mat, 1);
+
+        mxm(AfW , Af, Wtmp, 0.0);
+        mpm(Arhat , 1., AfW, 1., Ar);
+        free_csr(&AfW);
 
         print_csr(Arhat);
 
+        // free matrices
+        free_csr(&W_skel);
         free_csr(&Wtmp); 
         free_csr(&W0); 
         free_csr(&Arhat0); 
@@ -408,9 +421,6 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     free(uc);
     free(v);
     free(r);
-
-    // free matrices
-    free_csr(&W_skel);
 }
 
 /* Solve interpolation weights */
@@ -647,6 +657,118 @@ static void sp_add(uint yn, const uint *yi, double *y, double alpha,
   }
 }
 
+/* Matrix-matrix addition
+   X = alpha*A + beta*B
+
+   Remark: if X(i,j) == 0., the element is still stored in memory. 
+*/
+void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
+    struct csr_mat *B)
+{
+    uint rna = A->rn, cna = A->cn;
+    uint rnb = B->rn, cnb = B->cn;
+
+    if (rna != rnb || cna != cnb)
+    {
+        printf("Mismatch in matrix dimensions in mpm.");
+        die(0);
+    }
+
+    // Compute max number of non zeros in X and allocate memory
+    // Assume alpha != 0 & beta != 0
+    uint i, ja, jb, jsa, jea, jsb, jeb;
+    uint nnzx = 0;
+
+    for (i=0;i<rna;i++)
+    {
+        jsa = A->row_off[i];   
+        jea = A->row_off[i+1]; 
+        jsb = B->row_off[i];   
+        jeb = B->row_off[i+1];
+        for (ja=jsa,jb=jsb;(ja<jea || jb<jeb);) 
+        {
+            if (ja<jea && jb<jeb)
+            {
+                if (A->col[ja] == B->col[jb])
+                {
+                    ja++, jb++;
+                }
+                else
+                {
+                    A->col[ja] < B->col[jb] ? ja++ : jb++;
+                }
+            }
+            else if (ja == jea)
+            {   
+                jb++;
+            }
+            else if (jb == jeb)
+            {   
+                ja++;
+            }
+            else
+            {
+                printf("Error when computing size of X in mpm.\n");
+                die(0);
+            }
+            nnzx++;
+        }
+    }
+
+    malloc_csr(X, rna, cna, nnzx);
+
+    X->row_off[0] = 0;
+    uint counter = 0;
+
+    // Compute X = alpha*A + beta*B
+    for (i=0;i<rna;i++)
+    {
+        jsa = A->row_off[i];   
+        jea = A->row_off[i+1]; 
+        jsb = B->row_off[i];   
+        jeb = B->row_off[i+1];
+        X->row_off[i+1] = X->row_off[i];
+        for (ja=jsa,jb=jsb;(ja<jea || jb<jeb);) 
+        {
+            if (ja<jea && jb<jeb)
+            {
+                if (A->col[ja] == B->col[jb])
+                {
+                    X->col[counter] = A->col[ja];
+                    X->a[counter] = alpha*(A->a[ja]) + beta*(B->a[jb]);
+                    ja++ , jb++;
+                }
+                else if (A->col[ja] < B->col[jb])
+                {
+                    X->col[counter] = A->col[ja];
+                    X->a[counter] = alpha*(A->a[ja]);
+                    ja++;
+                }
+                else
+                {
+                    X->col[counter] = B->col[jb];
+                    X->a[counter] = beta*(B->a[jb]);
+                    jb++;
+                }
+            }
+            else if (ja == jea)
+            {   
+                X->col[counter] = B->col[jb];
+                X->a[counter] = beta*(B->a[jb]);
+                jb++;
+            }
+            else if (jb == jeb)
+            {   
+                X->col[counter] = A->col[ja];
+                X->a[counter] = alpha*(A->a[ja]);
+                ja++;
+            }
+            X->row_off[i+1] += 1;
+            counter++;
+        }
+    }
+}
+
 /* Matrix-matrix multiplication
    if (iftrsp == 0.0) X = A*B
    if (iftrsp != 0.0) X = A*(B^T)
@@ -693,7 +815,7 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
             {
                 if (A->col[ja] == Bt->col[jb]) 
                 {
-                    nnzx += 1;
+                    nnzx++;
                     break;
                 }
                 A->col[ja] < Bt->col[jb] ? ja++ : jb++; 
@@ -736,14 +858,12 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
     }
 }
 
-void csr2coo(coo_mat *coo_A, struct csr_mat *A)
+void csr2coo(coo_mat *coo_A, const struct csr_mat *A)
 {
  // Build matrix using coordinate list format
     uint rn = A->rn;
-    uint cn = A->cn;
-    uint nnz = A->row_off[rn];
-
-    //coo_mat *coo_A = tmalloc(coo_mat, nnz);
+    //uint cn = A->cn; Unused
+    //uint nnz = A->row_off[rn]; Unused
 
     uint i, j, je, js;
     for (i=0;i<rn;i++)
@@ -763,12 +883,10 @@ void transpose(struct csr_mat *At, const struct csr_mat *A)
 {
 
     uint rn = A->rn;
+    uint cn = A->cn;
     uint nnz = A->row_off[rn];
 
     coo_mat *coo_A = tmalloc(coo_mat, nnz);
-    uint i, j, je, js;
-    uint cn = A->cn;
- 
     csr2coo(coo_A,A);
 
     // Sort matrix by columns then rows
@@ -782,6 +900,7 @@ void transpose(struct csr_mat *At, const struct csr_mat *A)
     uint row_cur, row_prev = coo_A[0].j, counter = 1;
     At->row_off[0] = 0;
     
+    uint i;
     for (i=0;i<nnz;i++)
     {
         // row_off
@@ -918,7 +1037,7 @@ static void sp_restrict_unsorted(double *y, uint yn, const uint *map_to_y,
   for(i=0;i<yn;++i) y[i]=0;
   for(;xi!=xe;++xi,++x) {
     uint i = map_to_y[*xi];
-    if(i>=0) y[i]=*x;
+    y[i]=*x; //if(i>=0) y[i]=*x; comparison of unsigned expression >= 0 is always true
   }
 }
 
@@ -1528,7 +1647,6 @@ void coarsen(double *vc, struct csr_mat *A, double ctol)
 
     double *mask = tmalloc(double, cn);
     double *m = tmalloc(double, cn);
-    printf("coarse A->rn: %u, A->cn: %u\n", (unsigned int) A->rn, (unsigned int) A->cn);
 
     while (1)
     {
