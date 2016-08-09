@@ -67,6 +67,8 @@ void mxm(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B,
 void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
     struct csr_mat *B);
 
+void mxmpoint(struct csr_mat *X, struct csr_mat *A,  struct csr_mat *B);
+
 int interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
     struct csr_mat *W_skel);
 

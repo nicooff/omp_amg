@@ -25,9 +25,10 @@
     - Author of the original version (Matlab): James Lottes
     - Author of the serial version in C: Nicolas Offermans
 
-    - Last update: 5 August, 2016
+    - Last update: 9 August, 2016
 
-    - Status: finished mpm.
+    - Status: up to restriction matrix R, diag product doesn't seem to be 
+      supported for non square matrices
 
 */
 
@@ -389,6 +390,10 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         Wtmp = tmalloc(struct csr_mat, 1);            
         W0   = tmalloc(struct csr_mat, 1);
 
+//      [W,W0,lam] = intp.solve_weights(W_skel,Af,Ar,alpha,uc,v,tol1,lam);
+//      Arhat0 = Af*W0+Ar;
+//      Arhat  = Af*W +Ar;
+
         solve_weights(Wtmp, W0, lam, W_skel, Af, Ar, rnc, Dc, uc, v, tol);
         
         AfW = tmalloc(struct csr_mat, 1);
@@ -398,7 +403,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         mpm(Arhat0, 1., AfW, 1., Ar);
         free_csr(&AfW);
 
-        print_csr(Arhat0);
+        //print_csr(Arhat0);
         
         AfW = tmalloc(struct csr_mat, 1);
         Arhat = tmalloc(struct csr_mat, 1);
@@ -406,8 +411,58 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         mxm(AfW , Af, Wtmp, 0.0);
         mpm(Arhat , 1., AfW, 1., Ar);
         free_csr(&AfW);
+       
+        //print_csr(Arhat);
 
-        print_csr(Arhat);
+        struct csr_mat *Arr = tmalloc(struct csr_mat, 1);
+
+//      dchat  = full(sum(W .* Arhat + Ar .* W, 1).' + diag(Ac));
+        mpm(Arr, 1.0, Arhat, 1.0, Ar);
+        AfW = tmalloc(struct csr_mat, 1);
+        mxmpoint(AfW, Wtmp,Arr);
+
+        free_csr(&Arr);
+
+        Arr = tmalloc(struct csr_mat, 1);
+        transpose(Arr,AfW);  
+        
+        uint rna= Arr->rn;
+        
+        double *s = tmalloc(double, rna);
+        init_array(s, rna, 0.0);
+
+        //print_csr(Arr);
+
+        uint i, js, je, j;
+        for (i=0; i<rna; i++)
+        {
+           js = Arr->row_off[i];
+           je = Arr->row_off[i+1]; 
+           for (j=js; j<je; j++) s[i] = s[i]+Arr->a[j];
+           s[i]=s[i]+Dc[i];
+//           printf("sum %lf \n", s[i]);
+         }  
+         
+        double *Dcsqrti = s;
+//      Dcsqrti = spdiag(1./sqrt(dchat));
+//      R  = abs(Dfsqrti*Arhat )*Dcsqrti;
+        array_op(Dcsqrti, rna, minv_op);
+        array_op(Dcsqrti, rna, sqrt_op);
+        struct csr_mat *R =tmalloc(struct csr_mat,1); 
+        copy_csr(R, Arhat); // R = Arhat
+        array_op(Dfinv, rnf, sqrt_op);
+
+        diagcsr_op(R, Dfinv, dmult);// R=Dfinv*R (Dfsqrti*Arhat)
+        array_op(R->a, R->row_off[rnf], abs_op); // R = abs(R)
+        diagcsr_op(R, Dcsqrti, dmult);
+        print_csr(R);
+
+//      R0 = abs(Dfsqrti*Arhat0)*Dcsqrti;
+          
+//      w1 = full(((R*one)'*R)');
+//      w2 = full(((R*w1 )'*R)');
+//      r = w2./w1; r(w1==0) = 0;
+
 
         copy_csr(W,Wtmp);
 
@@ -695,6 +750,7 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
     uint i, ja, jb, jsa, jea, jsb, jeb;
     uint nnzx = 0;
 
+
     for (i=0;i<rna;i++)
     {
         jsa = A->row_off[i];   
@@ -730,7 +786,6 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
             nnzx++;
         }
     }
-
     malloc_csr(X, rna, cna, nnzx);
 
     X->row_off[0] = 0;
@@ -785,6 +840,94 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
     }
 }
 
+/* Matrix-matrix pointwise multiplication
+   X = A.* B
+
+   Remark: if X(i,j) == 0., the element is still stored in memory. 
+*/
+void mxmpoint(struct csr_mat *X,  struct csr_mat *A,  struct csr_mat *B)
+{
+    uint rna = A->rn, cna = A->cn;
+    uint rnb = B->rn, cnb = B->cn;
+
+    if (rna != rnb || cna != cnb)
+    {
+        printf("Mismatch in matrix dimensions in mxmpoint.");
+        die(0);
+    }
+
+    // Compute max number of non zeros in X and allocate memory
+    // Assume alpha != 0 & beta != 0
+    uint i, ja, jb, jsa, jea, jsb, jeb;
+    uint nnzx = 0;
+
+    for (i=0;i<rna;i++)
+    {
+        jsa = A->row_off[i];   
+        jea = A->row_off[i+1]; 
+        jsb = B->row_off[i];   
+        jeb = B->row_off[i+1];
+        for (ja=jsa,jb=jsb;(ja<jea || jb<jeb);) 
+        {
+            if (ja<jea && jb<jeb)
+            {
+                if (A->col[ja] == B->col[jb])
+                {
+                    ja++, jb++;
+                }
+                else
+                {
+                    A->col[ja] < B->col[jb] ? ja++ : jb++;
+                }
+            }
+            else if (ja == jea)
+            {   
+                jb++;
+            }
+            else if (jb == jeb)
+            {   
+                ja++;
+            }
+            else
+            {
+                printf("Error when computing size of X in mxmpoint.\n");
+                die(0);
+            }
+            nnzx++;
+        }
+    }
+
+    malloc_csr(X, rna, cna, nnzx);
+    X->row_off[0] = 0;
+    uint counter = 0;
+
+    // Compute X = A.*B
+    for (i=0;i<rna;i++)
+    {
+        jsa = A->row_off[i];   
+        jea = A->row_off[i+1]; 
+        jsb = B->row_off[i];   
+        jeb = B->row_off[i+1];
+        X->row_off[i+1] = X->row_off[i];
+        for (ja=jsa,jb=jsb;(ja<jea && jb<jeb);) 
+        {   if (A->col[ja] == B->col[jb])
+                {
+                    X->col[counter] = A->col[ja];
+                    X->a[counter] = (A->a[ja]) * (B->a[jb]);
+                    counter++;
+                    X->row_off[i+1] += 1;
+                    ja++; jb++;
+                }     
+            else if (A->col[ja] < B->col[jb])
+            {ja++;
+            }  
+            else if  (A->col[ja] > B->col[jb])
+            {jb++; 
+            }
+         } 
+       
+    }
+}
 /* Matrix-matrix multiplication
    if (iftrsp == 0.0) X = A*B
    if (iftrsp != 0.0) X = A*(B^T)
