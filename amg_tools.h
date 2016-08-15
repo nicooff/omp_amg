@@ -62,6 +62,8 @@ void mat_condense(
 
 double get_time(void);
 double apply_M(double *z, const double alpha, const double *y,
-  const double beta, const struct csr_mat *const M, const double *x);
+    const double beta, const struct csr_mat *const M, const double *x);
+double apply_Mt(double *const z, const struct csr_mat *const M, 
+    const double *x);
 
 #endif

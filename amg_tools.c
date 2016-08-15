@@ -97,3 +97,19 @@ double apply_M(double *z, const double alpha, const double *y,
   }
   return get_time()-t0;
 }
+
+/* sparse transposed matrix-vector product 
+   z = M^t x */
+double apply_Mt(double *const z, const struct csr_mat *const M, const double *x)
+{
+  uint i; const uint rn=M->rn,cn=M->cn;
+  const uint *const row_off = M->row_off, *col = M->col;
+  const double *a = M->a;
+  const double t0 = get_time();
+  for(i=0;i<cn;++i) z[i]=0;
+  for(i=0;i<rn;++i) {
+    uint j; const uint je=row_off[i+1]; const double xi = *x++;
+    for(j=row_off[i]; j<je; ++j) z[*col++] += (*a++) * xi;
+  }
+  return get_time()-t0;
+}

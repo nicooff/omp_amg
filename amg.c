@@ -63,6 +63,7 @@ static void barrier(const struct comm *c)
 
 /* sparse transposed matrix-vector product 
    z = M^t x */
+/*
 static double apply_Mt(
   double *const z, const struct csr_mat *const M, const double *x)
 {
@@ -77,6 +78,7 @@ static double apply_Mt(
   }
   return get_time()-t0;
 }
+*/
 
 /* apply scatter operator Q 
    ve = Q v */

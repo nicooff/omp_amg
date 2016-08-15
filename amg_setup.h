@@ -94,9 +94,12 @@ void sub_slong(slong *a, slong *b, double* v, uint n);
 * Vector-vector operations
 *******************************************************************************/
 // a[i] = a[i] (op) b[i] for i = 0,n-1
-enum vv_ops {plus, minus, ewmult}; //+, -, element-wise multiplication (.* in 
-                                   // Matlab)
+enum vv_ops {plus, minus, ewmult, ewdiv}; //+, -, element-wise multiplication (.* in 
+                                   // Matlab), element-wise division (./)
 void vv_op(double *a, double *b, uint n, enum vv_ops op);
+
+// c[i] = a[i] (op) b[i] for i = 0,n-1
+void vv_op3(double *c, double *a, double *b, uint n, enum vv_ops op);
 
 // Dot product between two vectors
 double vv_dot(double *a, double *b, uint n);
