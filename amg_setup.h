@@ -75,6 +75,23 @@ int interp_lmop(struct csr_mat *S, struct csr_mat *A, double *u,
 static void sp_add(uint yn, const uint *yi, double *y, double alpha,
                    uint xn, const uint *xi, const double *x);
 
+void expand_support(struct csr_mat *new_skel, struct csr_mat *W_skel, 
+    struct csr_mat *R, struct csr_mat *R0, double gamma2);
+
+void find_support(struct csr_mat *M, struct csr_mat *R, double goal);
+
+/* Cumulated sum */
+void cumsum (struct csr_mat *S, struct csr_mat *A);
+
+/* Sum over - columns if dim = 1
+            - rows    if dim = 2 
+   Assumes that memory for s has been allocated accordingly */
+void sum(double *s, struct csr_mat *A, uint dim);
+
+/* Dyadic product 
+   X[i,j] = a[i]*b[j] */
+void dyad(struct csr_mat *X, double *a, uint na, double *b, uint nb);
+
 /*******************************************************************************
 * Exctract a sub-matrix in csr format
 *******************************************************************************/
@@ -127,6 +144,16 @@ void bin_op(double *mask, double *a, uint n, enum bin_ops op);
 enum mask_ops {gt, lt, ge, le, eq, ne}; //>, <, >=, <=, =, !=
 void mask_op(double *mask, double *a, uint n, double trigger, enum mask_ops op);
 
+// a[i] = a[i] if (a[i] (op) trigger) is true
+//      = 0    otherwise
+// i = 0, n-1
+void apply_mask(double *a, uint n, double trigger, enum mask_ops op);
+
+// mask[i] = 1 if (a[i] (op) b[i]) is true
+//         = 0 otherwise
+// i = 0, n-1
+void mask_arrays(double *mask, double *a, double *b, uint n, enum mask_ops op);
+
 /*******************************************************************************
 * Extremum operations
 *******************************************************************************/
@@ -156,7 +183,7 @@ void init_array(double *a, uint n, double v);
 // Operations between an array and a scalar
 // a[i] = a[i] op scal
 // i = 0, n-1
-enum ar_scal_ops {mult_op}; // a[i] = a[i] * scal
+enum ar_scal_ops {mult_op, add_op}; // mult, add
 void ar_scal_op(double *a, double scal, uint n, enum ar_scal_ops op);
 
 // Condense array by deleting elment a[i] if b[i] == target
@@ -197,15 +224,22 @@ typedef struct {coo_mat coo_A; uint dest;} coo_mat_dest;
 
 /* Build coo matrix from csr format 
    Matrix coo_A is sorted at output */
-void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz);
+void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz, uint rn, uint cn);
+
 /* Build csr matrix from coo format */
 void csr2coo(coo_mat *coo_A, const struct csr_mat *A);
 
-/* Function to build sparse matrix */
+/* Functions to build sparse matrix */
 void build_csr(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 
     const double *Av);
+void build_csr_dim(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 
+    const double *Av, uint rn, uint cn);
+
+/* Comparison function */
+int cmp_coo_v_revert (const void *a, const void *b);
 
 /* TO BE DELETED */
 void print_csr(struct csr_mat *P);
+void print_coo(coo_mat *P, uint nnz);
 
 #endif

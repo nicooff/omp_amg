@@ -25,10 +25,9 @@
     - Author of the original version (Matlab): James Lottes
     - Author of the serial version in C: Nicolas Offermans
 
-    - Last update: 9 August, 2016
+    - Last update: 15 August, 2016
 
-    - Status: up to restriction matrix R, diag product doesn't seem to be 
-      supported for non square matrices
+    - Status: Progressed until expand_support.
 
 */
 
@@ -388,9 +387,23 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     // alpha = Dc
     double *alpha = tmalloc(double, cnc);
     memcpy(alpha, Dc, cnc*sizeof(double));
+    
+    // Declare everything that is required in while loop
+    struct csr_mat *Arr;
+    struct csr_mat *ArW;
+    struct csr_mat *new_skel;
 
-    //while(true){
+    double *Dcsqrti;
+    double *w1;
+    double *w2;
+    double *ones;
+    double *r;
 
+    double *Dfsqrti = Dfinv;
+    array_op(Dfsqrti, rnf, sqrt_op);
+
+    while(1)
+    {
         Wtmp = tmalloc(struct csr_mat, 1);            
         W0   = tmalloc(struct csr_mat, 1);
 
@@ -414,19 +427,20 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         mpm(Arhat , 1., AfW, 1., Ar);
         free_csr(&AfW);
 
-        struct csr_mat *Arr = tmalloc(struct csr_mat, 1);
+        Arr = tmalloc(struct csr_mat, 1);
 
 //      dchat  = full(sum(W .* Arhat + Ar .* W, 1).' + diag(Ac));
 //      Dcsqrti = spdiag(1./sqrt(dchat));
         mpm(Arr, 1.0, Arhat, 1.0, Ar);
-        struct csr_mat *ArW = tmalloc(struct csr_mat, 1);
+        ArW = tmalloc(struct csr_mat, 1);
         mxmpoint(ArW, Wtmp,Arr);
+        free_csr(&Arr);
 
         uint rna = ArW->rn;
         uint cna = ArW->cn;
         uint nnz = ArW->row_off[rna];
 
-        double *Dcsqrti = tmalloc(double, cna);
+        Dcsqrti = tmalloc(double, cna);
         init_array(Dcsqrti, cna, 0.0);
 
         uint i, col;
@@ -435,6 +449,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
             col = ArW->col[i];
             Dcsqrti[col] = Dcsqrti[col]+ArW->a[i];                
         }  
+        free_csr(&ArW);
 
         for (i=0; i<cna; i++)
         {
@@ -454,8 +469,6 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 //      Dimensions of R and R0 are rnf x cnc
         struct csr_mat *R = tmalloc(struct csr_mat,1); 
         copy_csr(R, Arhat); // R = Arhat
-        double *Dfsqrti = Dfinv;
-        array_op(Dfsqrti, rnf, sqrt_op);
 
         diagcsr_op(R, Dfsqrti, dmult);// R=Dfsqrti*R (Dfsqrti*Arhat)
         array_op(R->a, R->row_off[rnf], abs_op); // R = abs(R)
@@ -472,9 +485,9 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 //      w1 = full(((R*one)'*R)');
 //      w2 = full(((R*w1 )'*R)');
 //      r = w2./w1; r(w1==0) = 0;
-        double *w1 = tmalloc(double, cnc);
-        double *w2 = tmalloc(double, cnc);
-        double *ones = tmalloc(double, cnc);
+        w1 = tmalloc(double, cnc);
+        w2 = tmalloc(double, cnc);
+        ones = tmalloc(double, cnc);
         init_array(ones, cnc, 1.0);
         
         apply_M(tmp, 0., NULL, 1., R, ones);
@@ -483,10 +496,10 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         apply_M(tmp, 0., NULL, 1., R, w1);
         apply_Mt(w2, R, tmp);
 
-        double *r = tmalloc(double, cnc);
+        r = tmalloc(double, cnc);
         vv_op3(r, w2, w1, cnc, ewdiv);
 
-        for (i=0;i<cnc;i++) // w(w1==0) = 0;
+        for (i=0;i<cnc;i++) // r(w1==0) = 0;
         {
             if (w1[i] == 0) r[i] = 0.;
         }    
@@ -531,7 +544,8 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
                         }                    
                     }                    
                 }
-            }  
+            } 
+            free(wuc); 
         }
 
         
@@ -544,8 +558,12 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         }
 
 //      W_skel = intp.expand_support(W_skel,R,R0,gamma2);
+        new_skel = tmalloc(struct csr_mat, 1);
+        expand_support(new_skel, W_skel, R, R0, gamma2);
 
-        copy_csr(W,Wtmp);
+        free_csr(&W_skel);    
+        W_skel = tmalloc(struct csr_mat, 1);
+        copy_csr(W_skel, new_skel);
 
         // free matrices
         free_csr(&W_skel);
@@ -554,23 +572,568 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         free_csr(&Arhat0); 
         free_csr(&Arhat); 
         free_csr(&R0); 
-        free_csr(&R); 
+        free_csr(&R);
+        free_csr(&new_skel);
 
-    //}
+        free(Dcsqrti);
+        free(w1);
+        free(w2);
+        free(ones);
+        free(r); 
 
+    // End of while loop
+    }
+
+    copy_csr(W,Wtmp);
+
+    free(alpha);
     free(Df);
     free(Dfinv);
     free(Dc);
     free(Dcinv);
-    free(Dcsqrti);
     free(uc);
     free(v);
-    free(r);
     free(b);
     free(lam);
     free(tmp);
-    free(w1);
+}
+
+/* Expand support of interpolation matrix */
+void expand_support(struct csr_mat *new_skel, struct csr_mat *W_skel, 
+    struct csr_mat *R, struct csr_mat *R0, double gamma)
+{
+    struct csr_mat *M = tmalloc(struct csr_mat, 1);
+    find_support(M, R, gamma);
+
+    uint nf = W_skel->rn, nc = W_skel->cn;
+
+    // Temporary new_skel
+    struct csr_mat *ns_tmp = tmalloc(struct csr_mat, 1);
+    mpm(ns_tmp, 1., M, 1., W_skel);
+    free_csr(&M);
+
+    // bad_row = logical(sum(M & W_skel, 2)); nbad = sum(bad_row);
+    double *bad_row = tmalloc(double, nf);
+    uint nbad = 0;
+
+    uint i;
+    for (i=0;i<nf;i++)
+    {
+        uint j, js, je;
+        js = ns_tmp->row_off[i];
+        je = ns_tmp->row_off[i+1]; 
+        bad_row[i] = 0.;
+        for (j=js; j<je; j++)
+        {
+            if (ns_tmp->a[j] == 2.) // i.e. if M & W_skel == true 
+            {
+                bad_row[i] = 1.;
+                nbad += 1;
+                break;
+            }
+        }
+    }
+
+    // if nbad==0; return; end
+    // set new_skel = W_skel | M before returning
+    if (nbad == 0)
+    {
+        uint nnz = ns_tmp->row_off[nf];
+        for (i=0;i<nnz;i++)
+        {
+            if (ns_tmp->a[i] == 2.) ns_tmp->a[i] = 1.;
+        }
+        copy_csr(new_skel, ns_tmp);
+        free_csr(&ns_tmp);
+        free(bad_row);
+        return;
+    }
+
+    // ibr = find(bad_row);
+    uint *ibr = tmalloc(uint, nbad);
+    uint *ibrp = ibr;
+    for (i=0;i<nf;i++)
+    {
+        if (bad_row[i] != 0.) *ibrp++ = i;
+    }
+
+    // X = R0 - (R0 .* W_skel);
+    struct csr_mat *R0W = tmalloc(struct csr_mat, 1);
+    mxmpoint(R0W, R0, W_skel);
+
+    struct csr_mat *Xfull = tmalloc(struct csr_mat, 1);
+    mpm(Xfull, 1., R0, -1, R0W);
+    
+    free_csr(&R0W);
+
+    struct csr_mat *X = tmalloc(struct csr_mat, 1);
+    double *onec = tmalloc(double, nc);
+    init_array(onec, nc, 1.);
+
+    // X = abs(X(bad_row,:));
+    sub_mat(X, Xfull, bad_row, onec);
+    free_csr(&Xfull);
+    uint nnzx = X->row_off[nbad];
+    array_op(X->a, nnzx, abs_op);
+
+    // rank elements of X by descending magnitude, in each row
+    coo_mat *SX = tmalloc(coo_mat, nnzx);
+    csr2coo(SX, X);
+    
+    // Rows are already sorted after csr2coo
+    // sarray_sort cannot sort according to double -> use qsort instead
+    for (i=0;i<nbad;i++)
+    {
+        uint js=X->row_off[i], je=X->row_off[i+1];
+        qsort(&(SX[js]), je-js, sizeof(coo_mat), cmp_coo_v_revert);
+    }
+
+    // [i j v] = find(X); sx = [vec(i) vec(j) vec(v)];
+    // [~,idx] = sort(-sx(:,3)); sx = sx(idx,:);
+    // [~,idx] = sort( sx(:,1)); sx = sx(idx,:);
+    uint *sx1 = tmalloc(uint, nnzx), *sy2 = tmalloc(uint, nnzx);
+    double *sx2 = tmalloc(double, nnzx), *sx3 = tmalloc(double, nnzx);
+
+    for (i=0;i<nnzx;i++)
+    {
+        sx1[i] = SX[i].i;
+        sx2[i] = (double)(SX[i].j)+1.; // +1 because C convention for row numbering
+        sx3[i] = SX[i].v;
+    }
+    free(SX);
+
+    // [i j v] = find(sort(X,2,'descend')); sy = [vec(i) vec(j) vec(v)];
+    // [~,idx] = sort(sy(:,1)); sy = sy(idx,:);
+    uint w = 0; // max # of nonzeros in any row
+    uint *sy2p = sy2;
+    for (i=0;i<nbad;i++)
+    {
+        uint j, js=X->row_off[i], je=X->row_off[i+1];
+        uint wi = 0; // max # of nonzeros in row i
+        for (j=js;j<je;j++)
+        {
+            *sy2p++ = wi++;
+            if (wi > w) w = wi;
+        }
+    }
+    free_csr(&X);
+
+    // X = sparse(sy(:,2),sx(:,1),sx(:,3),w,nbad);
+    X = tmalloc(struct csr_mat, 1);
+    build_csr_dim(X, nnzx, sy2, sx1, sx3, w, nbad);
+
+    // J = sparse(sy(:,2),sx(:,1),sx(:,2),w,nbad);
+    struct csr_mat *J = tmalloc(struct csr_mat, 1);
+    build_csr_dim(J, nnzx, sy2, sx1, sx2, w, nbad);
+
+    // S = cumsum(X);
+    struct csr_mat *S = tmalloc(struct csr_mat, 1);
+    cumsum(S, X);
+
+    // V = ones(w,1) * sum(X)/2; ==> big waste of memory
+    double *sumX = tmalloc(double, nbad);
+    sum(sumX, X, 1); 
+    free_csr(&X);
+    ar_scal_op(sumX, 0.5, nbad, mult_op);
+
+    double *onew = tmalloc(double, w);
+    init_array(onew, w, 1.);
+
+    struct csr_mat *V = tmalloc(struct csr_mat, 1);
+    dyad(V, onew, w, sumX, nbad);
+
+    // N = ones(w,1) * (1+sum((S-V)<0)); ==> big waste of memory
+    struct csr_mat *SV = tmalloc(struct csr_mat, 1);
+    mpm(SV, 1., S, -1., V);
+    free_csr(&S);
+    free_csr(&V);
+    uint nnzsv = SV->row_off[w];
+    double *maskSV = tmalloc(double, nnzsv);
+    mask_op(maskSV, SV->a, nnzsv, 0., lt); //=> Lots of zeros
+    free(SV->a);
+    SV->a = maskSV;
+
+    double *sumSV = tmalloc(double, nbad);
+    sum(sumSV, SV, 1);
+    free_csr(&SV);
+    ar_scal_op(sumSV, 1., nbad, add_op);
+
+    struct csr_mat *N = tmalloc(struct csr_mat, 1);
+    dyad(N, onew, w, sumSV, nbad);
+
+    // L = sparse( ((1:w)' * ones(1,nbad)) <= N); ==> big waste of memory
+    double *linspace = tmalloc(double, w);
+    for (i=0;i<w;i++) linspace[i] = i+1;
+
+    double *onenbad = tmalloc(double, nbad);
+    init_array(onenbad, nbad, 1.);
+
+    struct csr_mat *L = tmalloc(struct csr_mat, 1);
+    dyad(L, linspace, w, onenbad, nbad);
+
+    uint nnzL = L->row_off[w], nnzN = N->row_off[w];
+    if (nnzL != nnzN)
+    {
+        printf("L and N should have same number of non zero elements.\n");
+        die(0);
+    }
+    double *maskLN = tmalloc(double, nnzL);
+    mask_arrays(maskLN, L->a, N->a, nnzL, le);
+    free_csr(&N);
+    free(L->a);
+    L->a = maskLN;
+
+    // [~,i,j] = find(L .* J);
+    struct csr_mat *LJ = tmalloc(struct csr_mat, 1);
+    mxmpoint(LJ, L, J);
+    free_csr(&L);
+    free_csr(&J);
+
+    uint *ibri = tmalloc(uint, nnzL); // upper bound for size, there are many zeros in L.*J
+    uint *coln = tmalloc(uint, nnzL); // upper bound for size, there are many zeros in L.*J
+    uint *ibrip = ibri, *colnp = coln;
+    uint nnzn = 0;
+
+    for (i=0;i<w;i++)
+    {
+        uint j, js=LJ->row_off[i], je=LJ->row_off[i+1];
+        for (j=js;j<je;j++)
+        {
+            if (LJ->a[j] != 0.)
+            {
+                nnzn++;
+                *ibrip++ = ibr[LJ->col[j]];
+                *colnp++ = (uint)(LJ->a[j]-1.); // -1 because C convention for row numbering
+            }
+        }
+    }
+    free_csr(&LJ);
+
+    // N = sparse(ibr(i),j,1,nf,nc);
+    double *onen = tmalloc(double, nnzn);
+    init_array(onen, nnzn, 1.);
+    N = tmalloc(struct csr_mat, 1);
+    build_csr_dim(N, nnzn, ibri, coln, onen, nf, nc); 
+
+    // new_skel = new_skel | N;   
+    mpm(new_skel, 1., ns_tmp, 1., N);
+
+    free_csr(&N);    
+    free_csr(&ns_tmp);
+
+    uint nnzns = new_skel->row_off[nf];
+    for (i=0;i<nnzns;i++)
+    {
+        if (new_skel->a[i] != 0.) new_skel->a[i] = 1.;
+    }
+
+    free(bad_row);
+    free(ibr);
+    free(onec);
+    free(onen);
+    free(sx1);
+    free(sx2);
+    free(sx3);
+    free(sy2);
+    free(sumX);
+    free(onew);
+    free(onenbad);
+    free(sumSV);
+    free(ibri);
+    free(coln); 
+    free(linspace);
+}
+
+/* Dyadic product 
+   X[i,j] = a[i]*b[j] */
+void dyad(struct csr_mat *X, double *a, uint na, double *b, uint nb)
+{
+    // Count number of nonzero elements first (better in case a and b are sparse)
+    uint i, j;
+    uint nnz=0;
+    for (i=0;i<na;i++)
+    {
+        for (j=0;j<nb;j++)
+        {
+            if (a[i]*b[j] != 0.) nnz++;
+        }
+    }
+
+    malloc_csr(X, na, nb, nnz);
+
+    X->row_off[0] = 0;
+
+    // Build matrix
+    uint k=0;
+    for (i=0;i<na;i++)
+    {
+        X->row_off[i+1] = X->row_off[i];
+        for (j=0;j<nb;j++)
+        {
+            double ab = a[i]*b[j];
+            if (ab != 0.) 
+            {
+                X->row_off[i+1] += 1;
+                X->col[k] = j;
+                X->a[k] = ab;
+                k++;
+            }
+        }
+    }
+}
+
+/* Sum over - columns if dim = 1
+            - rows    if dim = 2 
+   Assumes that memory for s has been allocated accordingly */
+void sum(double *s, struct csr_mat *A, uint dim)
+{
+    uint rn = A->rn, cn = A->cn;
+    if (dim == 1)
+    {
+        init_array(s, cn, 0.0);
+        uint i;
+        for (i=0; i<A->row_off[rn]; i++)
+        {   
+            uint col = A->col[i];
+            s[col]  += A->a[i];                
+        } 
+    }
+    else if (dim == 2)
+    {
+        init_array(s, rn, 0.0);
+        uint i;
+        for (i=0; i<rn; i++)
+        {   
+            uint j, js=A->row_off[i], je=A->row_off[i+1];
+            for (j=js; j<je; j++) s[i] += A->a[j];           
+        } 
+    }
+    else {printf("dim should be either 1 or 2 in sum.\n"); die(0);}
+}
+
+/* Cumulated sum */
+void cumsum (struct csr_mat *S, struct csr_mat *A)
+{
+    uint rn = A->rn, cn = A->cn;
+    uint nnza = A->row_off[rn];
+    uint nnzs = rn*cn;
+
+    malloc_csr(S, rn, cn, nnzs);
+    S->row_off[0] = 0;
+
+    double *cs = tmalloc(double, cn);
+    init_array(cs, cn, 0.);    
+
+    uint i, j=0, k;
+    for (i=0;i<rn;i++)
+    {
+        S->row_off[i+1] = S->row_off[i]+cn;
+        for (k=0;k<cn;k++)
+        {
+            if (j < nnza)
+            {
+                uint colA = A->col[j];
+                if (k == colA) cs[k] += A->a[j++];
+            }
+            uint m = i*cn+k;
+            S->col[m] = k;
+            S->a[m] = cs[k];
+        }
+    }
+    free(cs);
+}
+
+/* Comparison function for sorting coo_mat in reverse according to v field */
+int cmp_coo_v_revert (const void *a, const void *b)
+{
+    double av = ((coo_mat*)a)->v, bv = ((coo_mat*)b)->v;
+    if ( av > bv ) return -1;
+    if ( av < bv ) return 1;
+    return 0;
+}
+
+void find_support(struct csr_mat *Skel, struct csr_mat *R, double goal)
+{
+    uint nf = R->rn, nc = R->cn; // [nf,nc] = size(R);
+    uint nnz = R->row_off[nf];
+    double *onec = tmalloc(double, nc); // one = ones(nc,1);
+    init_array(onec, nc, 1.);
+
+    double *onef = tmalloc(double, nf); // onef = ones(nf,1);
+    init_array(onef, nf, 1.);
+
+    uint nskel = 0;
+    uint *skeli = tmalloc(uint, nnz); // skel = zeros(nnz(R),2);  
+    uint *skelj = tmalloc(uint, nnz); // => Split in two 1D arrays for ease
+    uint i;
+    for (i=0;i<nnz;i++) {skeli[i] = 0; skelj[i] = 0;}
+
+    double theta = 0.5;
+
+    double *rs = tmalloc(double, nf);
+    double *w = tmalloc(double, nc); 
+    double *w2 = tmalloc(double, nc);
+    double *tmp = tmalloc(double, nf);
+    double *v = tmalloc(double, nc); 
+    
+    double *r = tmalloc(double, nc);
+    double *sumR = tmalloc(double, nc);
+
+    struct csr_mat *Rloc;
+
+    // Need a local copy of R
+    Rloc = tmalloc(struct csr_mat, 1);
+    copy_csr(Rloc, R);
+
+    while (1)
+    {
+        // rs = R*one;
+        apply_M(rs, 0., NULL, 1., Rloc, onec);
+        
+        // w = (rs'*R)';
+        apply_Mt(w, Rloc, rs);
+        
+        // w2 = ((R*w)'*R)';
+        apply_M(tmp, 0., NULL, 1., Rloc, w);
+        apply_Mt(w2, Rloc, tmp);
+
+        // v = w2./w; v(w==0) = 0;
+        vv_op3(v, w2, w, nc, ewdiv);
+
+        for (i=0;i<nc;i++)
+        {
+            if (w[i] == 0.) v[i] = 0.;
+        }
+        
+        // if max( v ) < goal || max( w ) < goal; break; end    
+        double mv, mw; // max(v), max(w) 
+        uint mvi, mwi; // index of max
+        extr_op(&mv, &mvi, v, nc, max);
+        extr_op(&mw, &mwi, v, nc, max);
+    
+        if (mv < goal || mw < goal) break;
+
+        while (mw <= (1+theta)*goal) theta = theta/2.;
+        
+        sum(sumR, Rloc, 1);
+
+        uint nbad = 0;
+        for (i=0;i<nc;i++)
+        {
+            if (w[i] > (1+theta)*goal && sumR[i] != 0.) 
+            {
+                r[i] = 1.;
+                nbad += 1;
+            }
+            else r[i] = 0.;
+        }
+
+        double *maxx = tmalloc(double, nbad);
+        init_array(maxx, nbad, -DBL_MAX);
+        uint *maski = tmalloc(uint, nbad);
+
+        // X = spdiag(rs) * R(:,r);  % X_ij = R_ij ( e_i' R 1 )
+        // if nf>1; [~,i] = max(X); else i=ones(1,nbad); end
+        // here, i = maski
+        if (nf > 1)
+        {
+            struct csr_mat *X = tmalloc(struct csr_mat, 1);
+            sub_mat(X, Rloc, onef, r);
+
+            diagcsr_op(X, rs, dmult);
+
+            for (i=0;i<nf;i++)
+            {
+                uint j, js, je;
+                js = X->row_off[i];
+                je = X->row_off[i+1]; 
+                for (j=js; j<je; j++)
+                {
+                    uint col = X->col[j];
+                    if (X->a[j] > maxx[col])
+                    {
+                        maxx[col] = X->a[j];
+                        maski[col] = i;
+                    }                    
+                }                    
+            }            
+            free_csr(&X);
+        }
+        else
+        {
+            for (i=0;i<nbad;i++) maski[i] = 1;
+        }
+
+        // maskj = find(r)
+        uint *maskj = tmalloc(uint, nbad);
+        uint *maskjp = maskj;
+        for (i=0;i<nc;i++) 
+        {
+            if (r[i] != 0.) *maskjp++ = i;
+        }
+        
+        // M = logical(sparse(mask(:,1),mask(:,2),1,nf,nc));
+        struct csr_mat *M = tmalloc(struct csr_mat, 1);
+    
+        double *onebad = tmalloc(double, nbad); // onef = ones(nf,1);
+        init_array(onebad, nbad, 1.);
+        build_csr_dim(M, nbad, maski, maskj, onebad, nf, nc);
+
+////////////////////////
+/*        printf("rn = %u, cn = %u, nnz = %u\n", nf, nc, nbad);
+        for (i=0;i<nbad;i++) printf("maski[%u] = %u\n", i, maski[i]);
+        for (i=0;i<nbad;i++) printf("maskj[%u] = %u\n", i, maskj[i]);
+        for (i=0;i<nbad;i++) printf("onebad[%u] = %lf\n", i, onebad[i]);
+        print_csr(M); */
+////////////////////////
+
+        // R = R - (R.*M);
+        struct csr_mat *RM = tmalloc(struct csr_mat, 1);
+        mxmpoint(RM, Rloc, M);
+
+        struct csr_mat *Rnew = tmalloc(struct csr_mat, 1);
+        mpm(Rnew, 1., Rloc, -1., RM);
+
+        free_csr(&M);
+        free_csr(&RM);
+        free_csr(&Rloc);
+
+        Rloc = tmalloc(struct csr_mat, 1);
+        copy_csr(Rloc, Rnew); //
+   
+        free_csr(&Rnew); 
+
+        // skel(nskel+(1:nbad),:) = mask;
+        // nskel=nskel+nbad;
+        memcpy(skeli+nskel, maski, nbad*sizeof(uint));
+        memcpy(skelj+nskel, maskj, nbad*sizeof(uint));
+        nskel += nbad;
+
+        free(maxx);
+        free(maski);
+        free(maskj);
+        free(onebad);
+    }
+
+
+    free_csr(&Rloc);
+
+    double *oneskel = tmalloc(double, nskel);
+    init_array(oneskel, nskel, 1.);
+    build_csr_dim(Skel, nskel, skeli, skelj, oneskel, nf, nc);
+
+    free(onef);
+    free(onec);
+    free(skeli);
+    free(skelj);
+    free(rs);
+    free(w);
     free(w2);
+    free(tmp);
+    free(v);
+    free(r);
+    free(sumR);
+    free(oneskel);
 }
 
 /* Solve interpolation weights */
@@ -818,7 +1381,7 @@ static void sp_add(uint yn, const uint *yi, double *y, double alpha,
 /* Matrix-matrix addition
    X = alpha*A + beta*B
 
-   Remark: if X(i,j) == 0., the element is still stored in memory. 
+   Remark: if alpha*A(i,j) + beta*B(i,j) == 0., element is ignored. 
 */
 void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
     struct csr_mat *B)
@@ -836,7 +1399,6 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
     // Assume alpha != 0 & beta != 0
     uint i, ja, jb, jsa, jea, jsb, jeb;
     uint nnzx = 0;
-
 
     for (i=0;i<rna;i++)
     {
@@ -892,8 +1454,14 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
             {
                 if (A->col[ja] == B->col[jb])
                 {
-                    X->col[counter] = A->col[ja];
-                    X->a[counter] = alpha*(A->a[ja]) + beta*(B->a[jb]);
+                    double s = alpha*(A->a[ja]) + beta*(B->a[jb]);
+                    if (s != 0.)
+                    {
+                        X->col[counter] = A->col[ja];
+                        X->a[counter] = s;
+                        X->row_off[i+1] += 1;
+                        counter++;
+                    }
                     ja++ , jb++;
                 }
                 else if (A->col[ja] < B->col[jb])
@@ -901,12 +1469,16 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
                     X->col[counter] = A->col[ja];
                     X->a[counter] = alpha*(A->a[ja]);
                     ja++;
+                    X->row_off[i+1] += 1;
+                    counter++;
                 }
                 else
                 {
                     X->col[counter] = B->col[jb];
                     X->a[counter] = beta*(B->a[jb]);
                     jb++;
+                    X->row_off[i+1] += 1;
+                    counter++;
                 }
             }
             else if (ja == jea)
@@ -914,15 +1486,17 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
                 X->col[counter] = B->col[jb];
                 X->a[counter] = beta*(B->a[jb]);
                 jb++;
+                X->row_off[i+1] += 1;
+                counter++;
             }
             else if (jb == jeb)
             {   
                 X->col[counter] = A->col[ja];
                 X->a[counter] = alpha*(A->a[ja]);
                 ja++;
+                X->row_off[i+1] += 1;
+                counter++;
             }
-            X->row_off[i+1] += 1;
-            counter++;
         }
     }
 }
@@ -932,7 +1506,7 @@ void mpm(struct csr_mat *X, double alpha, struct csr_mat *A, double beta,
 
    Remark: if X(i,j) == 0., the element is still stored in memory. 
 */
-void mxmpoint(struct csr_mat *X,  struct csr_mat *A,  struct csr_mat *B)
+void mxmpoint(struct csr_mat *X, struct csr_mat *A, struct csr_mat *B)
 {
     uint rna = A->rn, cna = A->cn;
     uint rnb = B->rn, cnb = B->cn;
@@ -997,22 +1571,18 @@ void mxmpoint(struct csr_mat *X,  struct csr_mat *A,  struct csr_mat *B)
         jeb = B->row_off[i+1];
         X->row_off[i+1] = X->row_off[i];
         for (ja=jsa,jb=jsb;(ja<jea && jb<jeb);) 
-        {   if (A->col[ja] == B->col[jb])
-                {
-                    X->col[counter] = A->col[ja];
-                    X->a[counter] = (A->a[ja]) * (B->a[jb]);
-                    counter++;
-                    X->row_off[i+1] += 1;
-                    ja++; jb++;
-                }     
-            else if (A->col[ja] < B->col[jb])
-            {ja++;
-            }  
-            else if  (A->col[ja] > B->col[jb])
-            {jb++; 
-            }
-         } 
-       
+        {   
+            if (A->col[ja] == B->col[jb])
+            {
+                X->col[counter] = A->col[ja];
+                X->a[counter] = (A->a[ja]) * (B->a[jb]);
+                counter++;
+                X->row_off[i+1] += 1;
+                ja++; jb++;
+            }     
+            else if (A->col[ja] < B->col[jb]) ja++;
+            else if (A->col[ja] > B->col[jb]) jb++; 
+        }
     }
 }
 /* Matrix-matrix multiplication
@@ -1131,7 +1701,6 @@ void csr2coo(coo_mat *coo_A, const struct csr_mat *A)
 /* Transpose csr matrix */
 void transpose(struct csr_mat *At, const struct csr_mat *A)
 {
-
     uint rn = A->rn;
     uint cn = A->cn;
     uint nnz = A->row_off[rn];
@@ -1401,6 +1970,9 @@ uint pcg(double *x, struct csr_mat *A, double *r, double *M, double tol,
     // if n==0; return; end
     if (n == 0)
     {
+        free(p);
+        free(z);
+        free(tmp);
         return 0;
     } 
 
@@ -2198,12 +2770,36 @@ void mask_op(double *mask, double *a, uint n, double trigger, enum mask_ops op)
     uint i;
     switch(op)
     {
-        case(gt): for (i=0;i<n;i++) mask[i] = (a[i] > trigger)? 1. : 0.; break;
-        case(lt): for (i=0;i<n;i++) mask[i] = (a[i] < trigger)? 1. : 0.; break;
+        case(gt): for (i=0;i<n;i++) mask[i] = (a[i] >  trigger)? 1. : 0.; break;
+        case(lt): for (i=0;i<n;i++) mask[i] = (a[i] <  trigger)? 1. : 0.; break;
         case(ge): for (i=0;i<n;i++) mask[i] = (a[i] >= trigger)? 1. : 0.; break;
         case(le): for (i=0;i<n;i++) mask[i] = (a[i] <= trigger)? 1. : 0.; break;
-        case(eq): for (i=0;i<n;i++) mask[i] = (a[i] = trigger)? 1. : 0.; break;
+        case(eq): for (i=0;i<n;i++) mask[i] = (a[i] =  trigger)? 1. : 0.; break;
         case(ne): for (i=0;i<n;i++) mask[i] = (a[i] != trigger)? 1. : 0.; break;
+    }
+}
+
+/* Apply mask */
+void apply_mask(double *a, uint n, double trigger, enum mask_ops op)
+{
+    double *mask = tmalloc(double, n);
+    mask_op(mask, a, n, trigger, op);
+    vv_op(a, mask, n, ewmult);
+    free(mask);
+}
+
+/* Mask between elements of two arrays */
+void mask_arrays(double *mask, double *a, double *b, uint n, enum mask_ops op)
+{
+    uint i;
+    switch(op)
+    {
+        case(gt): for (i=0;i<n;i++) mask[i] = (a[i] >  b[i])? 1. : 0.; break;
+        case(lt): for (i=0;i<n;i++) mask[i] = (a[i] <  b[i])? 1. : 0.; break;
+        case(ge): for (i=0;i<n;i++) mask[i] = (a[i] >= b[i])? 1. : 0.; break;
+        case(le): for (i=0;i<n;i++) mask[i] = (a[i] <= b[i])? 1. : 0.; break;
+        case(eq): for (i=0;i<n;i++) mask[i] = (a[i] =  b[i])? 1. : 0.; break;
+        case(ne): for (i=0;i<n;i++) mask[i] = (a[i] != b[i])? 1. : 0.; break;
     }
 }
 
@@ -2267,6 +2863,7 @@ void ar_scal_op(double *a, double scal, uint n, enum ar_scal_ops op)
     switch(op)
     {
         case(mult_op)  :  for (i=0;i<n;i++) *a = (*a)*scal, a++; break;
+        case(add_op)   :  for (i=0;i<n;i++) *a = (*a)+scal, a++; break;
     }
 }
 
@@ -2486,53 +3083,120 @@ static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double 
     }
 }
 
-/* Build csr matrix from arrays of indices and values */
+/* Build csr matrix from arrays of indices and values 
+   Matrix dimensions are deduced from input data */
 void build_csr(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 
     const double *Av)
 {
     // Build matrix in coord. list format
     coo_mat *coo_A = tmalloc(coo_mat, n);
 
-    uint i;
+    uint i, k=0;
+    uint rn=0, cn=0;
+    uint nnz=n;
     for (i=0;i<n;i++)
     {
-        coo_A[i].i = Ai[i];
-        coo_A[i].j = Aj[i];
-        coo_A[i].v = Av[i];
+        if (Av[i] != 0.)
+        {
+            coo_A[k].i = Ai[i];
+            coo_A[k].j = Aj[i];
+            coo_A[k].v = Av[i];
+            k++;
+        }
+        else nnz--;
+        // Check for dimensions
+        if (coo_A[i].i+1 > rn) rn = coo_A[i].i+1;
+        if (coo_A[i].j+1 > cn) cn = coo_A[i].j+1;
     }
     
     // Build csr matrix
-    coo2csr(A, coo_A, n);
+    coo2csr(A, coo_A, nnz, rn, cn);
     free(coo_A);
 }
 
-/* Build sparse matrix using the csr format
-   It is assumed that  
-   - the function is called in serial
-   - coo_A is sorted by rows and columns
-*/
-void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz)
+/* Build csr matrix from arrays of indices and values 
+   Matrix dimensions are imposed */
+void build_csr_dim(struct csr_mat *A, uint n, const uint *Ai, const uint* Aj, 
+    const double *Av, uint rn, uint cn)
+{
+    // Build matrix in coord. list format
+    coo_mat *coo_A = tmalloc(coo_mat, n);
+
+    uint i, k=0;
+    uint nnz=n;
+    for (i=0;i<n;i++)
+    {
+        if (Av[i] != 0.)
+        {
+            coo_A[k].i = Ai[i];
+            coo_A[k].j = Aj[i];
+            coo_A[k].v = Av[i];
+            k++;
+        }
+        else nnz--;
+    }
+    
+    // Build csr matrix
+    coo2csr(A, coo_A, nnz, rn, cn);
+    free(coo_A);
+}
+
+/* Build sparse matrix using the csr format */
+void coo2csr(struct csr_mat *A, coo_mat *coo_A, uint nnz, uint rn, uint cn)
 {
     // Sort matrix by rows then columns
     buffer buf = {0};
     sarray_sort_2(coo_mat, coo_A, nnz, i, 0, j, 0, &buf);
     buffer_free(&buf);
 
-    /* Go to csr format */
-    // Check for dimensions
-    uint rn=0, cn=0;
+    malloc_csr(A, rn, cn, nnz);
+
+    uint row_cur, row_prev = 0, counter = 1;
+    A->row_off[0] = 0;
+    
     uint i;
     for (i=0;i<nnz;i++)
     {
-        if (coo_A[i].i+1 > rn) rn = coo_A[i].i+1;
-        if (coo_A[i].j+1 > cn) cn = coo_A[i].j+1;
+        // row_off
+        row_cur = coo_A[i].i;
+        if (row_cur != row_prev)     
+        {    
+            uint k;
+            for (k=row_prev;k<row_cur;k++)
+            {
+                A->row_off[counter++] = i;
+            }
+        }
+        
+        A->col[i] = coo_A[i].j; // col
+        A->a[i] = coo_A[i].v; // a
+
+        if (i == nnz-1) 
+        {
+            for (;counter<=rn;)
+            {
+               A->row_off[counter++] = nnz;
+            }
+        }
+    
+        row_prev = row_cur;
     }
+}
+
+/* Build sparse matrix using the csr format. Original version. */
+void coo2csr_v1(struct csr_mat *A, coo_mat *coo_A, uint nnz, uint rn, uint cn)
+{
+    // Sort matrix by rows then columns
+    buffer buf = {0};
+    sarray_sort_2(coo_mat, coo_A, nnz, i, 0, j, 0, &buf);
+    buffer_free(&buf);
 
     malloc_csr(A, rn, cn, nnz);
 
     uint row_cur, row_prev = coo_A[0].i, counter = 1;
     A->row_off[0] = 0;
     
+    uint i;
     for (i=0;i<nnz;i++)
     {
         // row_off
@@ -2580,3 +3244,11 @@ void print_csr(struct csr_mat *P)
     }
 }
 
+void print_coo(coo_mat *P, uint nnz)
+{
+    uint i;
+    for (i=0;i<nnz;i++) 
+    {
+        printf("P[%u,%u] = %lf\n", P[i].i, P[i].j, P[i].v);
+    }
+}
