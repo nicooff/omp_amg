@@ -411,8 +411,32 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 //      Arhat0 = Af*W0+Ar;
 //      Arhat  = Af*W +Ar;
 
+//////////////////////
+/*        uint ii;
+        printf("BEFORE:\n");
+        for (ii=0; ii<cnr; ii++)
+        {
+            printf("alpha[%u] = %lf\n", ii, alpha[ii]);
+        }
+
+        for (ii=0; ii<rnf; ii++)
+        {
+            printf("lam[%u] = %lf\n", ii, lam[ii]);
+        }*/
+//////////////////////
+
         solve_weights(Wtmp, W0, lam, W_skel, Af, Ar, rnc, alpha, uc, v, tol);
-        
+
+/*        printf("AFTER:\n");
+        for (ii=0; ii<rnf; ii++)
+        {
+            printf("lam[%u] = %lf\n", ii, lam[ii]);
+        }
+
+        char dum[20];
+        printf("Enter anything:");
+        scanf("%s", dum);*/
+
         AfW = tmalloc(struct csr_mat, 1);
         Arhat0 = tmalloc(struct csr_mat, 1);
 
@@ -436,34 +460,14 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         mxmpoint(ArW, Wtmp,Arr);
         free_csr(&Arr);
 
-        uint rna = ArW->rn;
-        uint cna = ArW->cn;
-        uint nnz = ArW->row_off[rna];
-
-        Dcsqrti = tmalloc(double, cna);
-        init_array(Dcsqrti, cna, 0.0);
-
-        uint i, col;
-        for (i=0; i<nnz; i++)
-        {
-            col = ArW->col[i];
-            Dcsqrti[col] = Dcsqrti[col]+ArW->a[i];                
-        }  
+        Dcsqrti = tmalloc(double, cnc);
+        sum(Dcsqrti, ArW, 1);
         free_csr(&ArW);
 
-        for (i=0; i<cna; i++)
-        {
-            Dcsqrti[i] = Dcsqrti[i]+Dc[i];
-        }
+        vv_op(Dcsqrti, Dc, cnc, plus);        
 
-        array_op(Dcsqrti, cna, minv_op);
-        array_op(Dcsqrti, cna, sqrt_op);
-
-/*        for (i=0; i<cna; i++)
-        {
-            printf("Dcsqrti[%u] = %lf\n", i, Dcsqrti[i]);
-        }
-*/
+        array_op(Dcsqrti, cnc, minv_op);
+        array_op(Dcsqrti, cnc, sqrt_op);
 
 //      R  = abs(Dfsqrti*Arhat )*Dcsqrti;
 //      Dimensions of R and R0 are rnf x cnc
@@ -499,6 +503,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         r = tmalloc(double, cnc);
         vv_op3(r, w2, w1, cnc, ewdiv);
 
+        uint i;
         for (i=0;i<cnc;i++) // r(w1==0) = 0;
         {
             if (w1[i] == 0) r[i] = 0.;
@@ -519,11 +524,9 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         if (n == 0 || w1m <= gamma2)
         {
             free_csr(&Wtmp);
-            Wtmp = tmalloc(struct csr_mat, 1);
             free_csr(&W0);
             W0 = tmalloc(struct csr_mat, 1);
-            solve_weights(Wtmp, W0, lam, W_skel, Af, Ar, rnc, alpha, uc, v, 
-                          1e-16);
+            solve_weights(W, W0, lam, W_skel, Af, Ar, rnc, alpha, uc, v, 1e-16);
 
             double *wuc = tmalloc(double, rnf);
             apply_M(wuc, 0., NULL, 1., W, uc);
@@ -533,11 +536,11 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
                 if (wuc[i] != 0.) 
                 {
                     uint j, js, je;
-                    js = Wtmp->row_off[i];
-                    je = Wtmp->row_off[i+1]; 
+                    js = W->row_off[i];
+                    je = W->row_off[i+1]; 
                     for (j=js; j<je; j++)
                     {
-                        if (i == Wtmp->col[j])
+                        if (i == W->col[j])
                         {
                             double vwuc = v[i]/wuc[i];
                             W->a[j] = vwuc*W->a[j];
@@ -546,6 +549,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
                 }
             } 
             free(wuc); 
+            break;
         }
 
         
@@ -566,7 +570,6 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
         copy_csr(W_skel, new_skel);
 
         // free matrices
-        free_csr(&W_skel);
         free_csr(&Wtmp); 
         free_csr(&W0); 
         free_csr(&Arhat0); 
@@ -583,8 +586,6 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 
     // End of while loop
     }
-
-    copy_csr(W,Wtmp);
 
     free(alpha);
     free(Df);
@@ -1203,10 +1204,11 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
     double *alpha, double *u, double *v, double tol)
 {
     uint nf = W_skel->rn, nc = W_skel->cn;
-    double *au2 = tmalloc(double, nc);
 
+    // S = cinterp_lmop(Af,alpha.*(u.*u),W_skel,logical( (+W_skel)*(+W_skel)' ));
+    double *au2 = tmalloc(double, nc);
     memcpy(au2, u, nc*sizeof(double)); // au2 = u
-    array_op(u, nc, sqr_op); // au2 = u.^2
+    array_op(au2, nc, sqr_op); // au2 = u.^2
     vv_op(au2, alpha, nc, ewmult); // au2 = alpha.*(u.^2)
 
     // Need to initialize S by (W_skel*W_skel') before calling interp_lmop
@@ -1216,17 +1218,18 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
     // S and Af are assumed to be symmetric -> not transposed
     interp_lmop(S, Af, au2, W_skelt);
 
+    // resid = v - W0*u;
     double *resid = tmalloc(double, nf);
-
     apply_M(resid, 1.0, v, -1.0, W0, u);
     
+    // dlogic = logical(diag(S));
     double *d = tmalloc(double, nf);
-
     diag(d, S);
 
     double *dlogic = tmalloc(double, nf);
     mask_op(dlogic, d, nf, 0.0, ne);
 
+    // if ~all(i); S = S(i,i); lam(~i) = 0; end
     struct csr_mat *subS = tmalloc(struct csr_mat, 1);
 
     uint i, ifall = 0;
@@ -1246,6 +1249,7 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
         S = subS;
     }
 
+    // [x,k] = pcg(S,resid(i)-S*lam(i),1./diag(S),tol,resid(i))
     uint ncond = condense_array(resid, dlogic, 0.0, nf);
     condense_array(d, dlogic, 0.0, nf);
     double *lam_cond = tmalloc(double, nf);
@@ -1261,10 +1265,11 @@ void solve_constraint(double *lam, struct csr_mat *W_skel,
 
     pcg(x, S, q, d, tol, resid);
 
+    // lam(i) = lam(i)+x;
     double *xp = x;
     for (i=0;i<nf;i++)
     {
-        if (dlogic[i] != 0.) lam[i] = *xp++;
+        if (dlogic[i] != 0.) lam[i] += *xp++;
     }
 
 // Outpost for checking
@@ -2876,7 +2881,7 @@ uint condense_array(double *a, double *b, const double target, const uint n)
         
     uint i, counter = 0;
     for (i=0;i<n;i++) {if (b[i] != target) tmp[counter++] = a[i];}
-    memcpy(a, tmp, counter*sizeof(double));
+    memcpy(a, tmp, n*sizeof(double));
 
     free(tmp);
     return counter;
