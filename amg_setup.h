@@ -211,6 +211,12 @@ void copy_csr(struct csr_mat *B, struct csr_mat *A);
 // Free matrix A
 void free_csr(struct csr_mat **A);
 
+// Initialize array of pointers to csr_mat
+void malloc_csr_arr(struct csr_mat ***arr, uint n);
+
+// Realloc array of pointers to csr_mat
+void realloc_csr_arr(struct csr_mat ***arr, uint n);
+
 // Free data strucutre
 //   NOT WORKING
 void free_data(struct amg_setup_data **data);

@@ -95,7 +95,10 @@ int main(int argc, char *argv[])
 
     struct amg_setup_data *data = tmalloc(struct amg_setup_data, 1);
     amg_setup(n-1, Ai, Aj, Av, data);
-    //free_data(&data); NOT WORKING
+    
+    // amg_export(...);
+
+    free_data(&data);
 
     free(v);
     free(Aid);
