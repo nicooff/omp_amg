@@ -5,6 +5,14 @@
 void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     struct amg_setup_data *data);
 
+/* Export AMG data */
+void amg_export(struct amg_setup_data *data);
+static void savemats(uint *len, uint n, uint nl, uint *lvl, uint **id,
+                     struct csr_mat **mat, const char *filename);
+static uint max_row_nnz(struct csr_mat *mat);
+static void savevec(uint nl, struct amg_setup_data *data, uint n, uint *lvl,
+    uint *W_len, uint *AfP_len, uint *Aff_len, double *dvec, const char *name);
+
 /*******************************************************************************
 * AMG functions
 *******************************************************************************/

@@ -25,14 +25,13 @@
     - Author of the original version (Matlab): James Lottes
     - Author of the serial version in C: Nicolas Offermans
 
-    - Last update: 13 September, 2016
+    - Last update: 19 September, 2016
 
     - Status: 
-        * Finished interpolation.
+        * Finished amg_export.
         * The part with memory reallocation has memory leakage -> use "initsize"
           (initial guess for number of levels) high enough!
         * Only tested for small 2D cavity.
-        * The final structure "data" has not been fully checked.
         * No sparsification functions.
 */
 
@@ -52,7 +51,6 @@
         - Properly check anyvc (Done but not tested).
         - Implement all the sparsification functions (sym_sparsify, 
           simple_sparsify...).
-        - Implement amg_export.
         - Check with large cases and debug.
 */
 
@@ -69,14 +67,6 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
 /* Build A the required data for the setup */
     build_csr(A, n, Ai, Aj, Av);
-
-    // Sublevel number
-    uint level = 0;
-
-    // Init id array
-    uint *id = tmalloc(uint, A->rn);
-    uint k;
-    for (k=0;k<A->rn;k++) id[k] = k+1;
 
 /* Tolerances (hard-coded so far) */
     double tol = 0.5; 
@@ -104,7 +94,9 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
     data->nnzfp = tmalloc(double, initsize-1);
     data->m = tmalloc(double, initsize-1);
     data->rho = tmalloc(double, initsize-1);
-    data->id = tmalloc(uint*, initsize);
+    data->id = tmalloc(uint, A->rn);
+    data->idc = tmalloc(uint*, initsize);
+    data->idf = tmalloc(uint*, initsize);
     data->C = tmalloc(double*, initsize-1);
     data->F = tmalloc(double*, initsize-1);
     data->D = tmalloc(double*, initsize-1);
@@ -113,9 +105,16 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
     malloc_csr_arr(&(data->Af), initsize-1);
 
-    malloc_csr_arr(&(data->Wt), initsize-1);
+    malloc_csr_arr(&(data->W), initsize-1);
 
-    malloc_csr_arr(&(data->AfPt), initsize-1);
+    malloc_csr_arr(&(data->AfP), initsize-1);
+
+    // Sublevel number
+    uint level = 0;
+
+    // Init id array
+    uint k;
+    for (k=0;k<A->rn;k++) data->id[k] = k+1;
 
 // BEGIN WHILE LOOP
     while (1)
@@ -129,7 +128,8 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
             data->nnzfp = trealloc(double, data->nnzfp, newsize-1);
             data->m = trealloc(double, data->m, newsize-1);
             data->rho = trealloc(double, data->rho, newsize-1);
-            data->id = trealloc(uint*, data->id, newsize);
+            data->idc = trealloc(uint*, data->idc, newsize-1);
+            data->idf = trealloc(uint*, data->idf, newsize-1);
             data->C = trealloc(double*, data->C, newsize-1);
             data->F = trealloc(double*, data->F, newsize-1);
             data->D = trealloc(double*, data->D, newsize-1);
@@ -138,9 +138,9 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
 
             realloc_csr_arr(&(data->Af), newsize-1);
 
-            realloc_csr_arr(&(data->Wt), newsize-1);
+            realloc_csr_arr(&(data->W), newsize-1);
 
-            realloc_csr_arr(&(data->AfPt), newsize-1);
+            realloc_csr_arr(&(data->AfP), newsize-1);
         }
 
         // Dimensions of matrix A
@@ -150,13 +150,16 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         data->n[level] = cn;
         data->nnz[level] = A->row_off[rn];
 
-        data->id[level] = tmalloc(uint, rn);
-        memcpy(data->id[level], id, cn*sizeof(uint));
-
         data->A[level] = tmalloc(struct csr_mat, 1);
         copy_csr(data->A[level], A);
 
-        if (cn <= 1) break;
+        if (cn <= 1) 
+        {
+            data->nullspace = 0;
+            if (A->a[0] < 1e-9) data->nullspace = 1;
+            printf("Nullspace = %u\n", data->nullspace);
+            break;
+        }
 
     /* Coarsen */ 
         double *vc = tmalloc(double, rn);
@@ -167,10 +170,10 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         bin_op(vf, vc, cn, not_op); // vf  = ~vc for i = 1,...,cn
 
         data->C[level] = tmalloc(double, rn);
-        memcpy(data->C[level], vc, cn*sizeof(double));
+        memcpy(data->C[level], vc, rn*sizeof(double));
 
         data->F[level] = tmalloc(double, rn);
-        memcpy(data->F[level], vf, cn*sizeof(double));
+        memcpy(data->F[level], vf, rn*sizeof(double));
 
     /* Smoother */
         // Af = A(F, F)
@@ -182,15 +185,6 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         uint cnf = Af->cn;
         uint ncolf = Af->row_off[rnf];
 
-        // Update id array
-        uint *idf = tmalloc(uint, rnf);
-        uint i, c;
-        for (i=0,c=0;i<rn;i++) if (vf[i] == 1.) idf[c++] = id[i];
-        free(id);
-        id = tmalloc(uint, rnf);
-        memcpy(id, idf, rnf*sizeof(uint));
-        free(idf);
-
         // af2 = Af.*Af ( Af.*conj(Af) in Matlab --> make sure Af is never complex)  
         double *af = tmalloc(double, ncolf); 
         memcpy(af, Af->a, ncolf*sizeof(double));
@@ -200,6 +194,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         // s = 1./sum(Af.*Af)
         double *s = tmalloc(double, rnf);
 
+        uint i;
         for (i=0; i<rnf; i++)
         {
             uint js = Af->row_off[i];
@@ -244,7 +239,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
             ar_scal_op(D, 2./(a+b), rnf, mult_op);
             
             data->D[level] = tmalloc(double, rnf); 
-            memcpy(data->D[level], D, rnf);
+            memcpy(data->D[level], D, rnf*sizeof(double));
 
             double rho = (b-a)/(b+a);
             data->rho[level] = rho;
@@ -270,7 +265,7 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
             gap = 0;
 
             data->D[level] = tmalloc(double, rnf); 
-            memcpy(data->D[level], D, rnf);     
+            memcpy(data->D[level], D, rnf*sizeof(double));     
 
             data->rho[level] = 0;
             data->m[level] = 1;
@@ -290,32 +285,48 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         struct csr_mat *Ac = tmalloc(struct csr_mat, 1);
         sub_mat(Ac, A, vc, vc);
 
+        // Update id arrays
+        uint rnc = Ac->rn;
+
+        data->idc[level] = tmalloc(uint, rnc);
+        data->idf[level] = tmalloc(uint, rnf);
+        uint *idl;
+
+        if (level== 0) idl = data->id;
+        else           idl = data->idc[level-1];
+
+        uint cc, cf;
+        for (i=0,cc=0,cf=0;i<rn;i++) 
+        {
+            if (vc[i] == 1.) (data->idc[level])[cc++] = idl[i];
+            else             (data->idf[level])[cf++] = idl[i];
+        }
+
         // W
         struct csr_mat *W = tmalloc(struct csr_mat, 1);
 
         interpolation(W, Af, Ac, Afc, gamma2, itol); // Maybe W should be transposed at output...
 
-        struct csr_mat *Wt = tmalloc(struct csr_mat, 1);
-        transpose(Wt, W); // ... so that we do not transpose it here.
-
-        data->Wt[level] = tmalloc(struct csr_mat, 1);
-        copy_csr(data->Wt[level], Wt);
+        data->W[level] = tmalloc(struct csr_mat, 1);
+        copy_csr(data->W[level], W);
 
         // AfP = Af*W+A(F,C);
         struct csr_mat *AfW = tmalloc(struct csr_mat, 1);
+        struct csr_mat *Wt = tmalloc(struct csr_mat, 1);
+        transpose(Wt, W);
         mxm(AfW, Af, Wt, 1.);
 
         struct csr_mat *AfP = tmalloc(struct csr_mat, 1);
         mpm(AfP, 1., AfW, 1., Afc);
         free_csr(&AfW);
 
-        struct csr_mat *AfPt = tmalloc(struct csr_mat, 1);
-        transpose(AfPt, AfP);
+        //struct csr_mat *AfPt = tmalloc(struct csr_mat, 1);
+        //transpose(AfPt, AfP);
 
-        data->AfPt[level] = tmalloc(struct csr_mat, 1);
-        copy_csr(data->AfPt[level], AfPt);
+        data->AfP[level] = tmalloc(struct csr_mat, 1);
+        copy_csr(data->AfP[level], AfP);
 
-        free_csr(&AfPt);
+        //free_csr(&AfPt);
 
         data->nnzfp[level] = AfP->row_off[AfP->rn];
 
@@ -358,13 +369,198 @@ void amg_setup(uint n, const uint *Ai, const uint* Aj, const double *Av,
         free_csr(&AcfW);
         free_csr(&AfP);
         free_csr(&WtAfP);
-
     }
 // END WHILE LOOP
 
     data->nlevels = level+1;
     free_csr(&A);
-    free(id);
+}
+
+void amg_export(struct amg_setup_data *data)
+{
+    uint nlevels = data->nlevels;
+    uint n = data->n[0];
+    
+    // for i=1:nl; lvl(data.id{i})=i; end
+    uint *lvl = tmalloc(uint, n);
+    uint i, j;
+
+    for (i=0;i<n;i++) lvl[i] = 1;
+    for (i=0;i<nlevels-1;i++)
+    {
+        uint nl = data->n[i+1];
+        uint *idl = data->idc[i];
+        for (j=0;j<nl;j++)
+        {
+            lvl[idl[j]-1] += 1;
+        }
+    }
+
+    //for (i=0;i<n;i++) printf("lvl[%u] = %u\n",i,lvl[i]);
+
+    //for i=1:nl-1; dvec(xor(data.id{i},data.id{i+1}),1) = full(diag(data.D{i})); end
+    double *dvec = tmalloc(double, n);
+    for (i=0;i<nlevels-1;i++)
+    {
+        uint nl = data->n[i]-data->n[i+1];
+        uint *idl = data->idf[i];
+        double *Dl = data->D[i];
+        for (j=0;j<nl;j++)
+        {
+            dvec[idl[j]-1] = Dl[j];
+        }
+    }
+
+    // if nullspace==0; dvec(data.id{nl}) = 1/full(data.A{nl}); end;
+    uint k = (data->idc[nlevels-2][0])-1;
+    if (data->nullspace != 0) 
+    {
+        dvec[k] = 0.;
+    }
+    else 
+    {
+        double a = *(data->A[nlevels-1]->a);
+        dvec[k] = 1./a;
+    }
+
+    // 
+    uint *W_len = tmalloc(uint, n);
+    savemats(W_len, n, nlevels-1, lvl, data->idc, data->W, "amg_W.dat");
+
+    uint *AfP_len = tmalloc(uint, n);
+    savemats(AfP_len, n, nlevels-1, lvl, data->idc, data->AfP, "amg_AfP.dat");
+
+    uint *Aff_len = tmalloc(uint, n);
+    savemats(Aff_len, n, nlevels-1, lvl, data->idf, data->Af, "amg_Aff.dat");
+
+    savevec(nlevels, data, n, lvl, W_len, AfP_len, Aff_len, dvec, "amg.dat");
+
+    free(W_len);
+    free(AfP_len);
+    free(Aff_len);
+    free(dvec);
+    free(lvl);
+}
+
+/*
+    Function to save matrices
+    OUTPUT:
+    - len(n): length of each row
+    INPUT:
+    - nl: number of levels
+    - n: number of points
+    - lvl(n): last level at which each point appears
+    - id(n): global id for each point
+    - mat(nl): array pointing to matrices of the different levels
+    - filename: name of the file
+*/
+static void savemats(uint *len, uint n, uint nl, uint *lvl, uint **id,
+                     struct csr_mat **mat, const char *filename)
+{
+    const double magic = 3.14159;
+    FILE *f = fopen(filename,"w");
+    uint max=0;
+    uint i;
+    uint *row;
+    double *buf;
+    fwrite(&magic,sizeof(double),1,f);
+
+    for(i=0;i<nl;++i) {uint l=max_row_nnz(mat[i]); if(l>max) max=l; }
+    //printf("maximum row size = %d\n",(int)max);
+    buf = tmalloc(double, 2*max);
+    row = tmalloc(uint, nl);
+    for(i=0;i<nl;++i) row[i]=0;
+    for(i=0;i<n;++i) 
+    {
+        uint l = lvl[i]-1;
+        struct csr_mat *M;
+        uint j,k,kb,ke;
+        double *p;
+        if(l>nl) { printf("level out of bounds\n"); continue; }
+        if(l==nl) { len[i]=0; continue; }
+        M = mat[l];
+        j = row[l]++;
+        if(j>=M->rn) { printf("row out of bounds\n"); continue; }
+        kb=M->row_off[j],ke=M->row_off[j+1];
+        p = buf;
+        for(k=kb;k!=ke;++k) *p++ = id[l][M->col[k]], *p++ = M->a[k];
+        len[i] = ke-kb;
+        fwrite(buf,sizeof(double),(double)(2*(ke-kb)),f);
+    }
+    for(i=0;i<nl;++i) 
+    {
+        if(row[i]!=mat[i]->rn) printf("matrices not exhausted\n");
+    }
+    free(row);
+    free(buf);
+    fclose(f);
+}
+
+/* Returns max number of non zero elements on a row */
+static uint max_row_nnz(struct csr_mat *mat)
+{
+    uint n=mat->rn,max=0;
+    uint i;
+    for(i=0;i<n;++i) 
+    {
+        uint l=mat->row_off[i+1]-mat->row_off[i];
+        if(l>max) max=l;
+    }
+    return max;
+}
+
+/*
+    Function to save vectors
+    INPUT:
+    - nl: number of levels
+    - data: data with all info about setup
+    - n: number of points
+    - lvl(n): last level at which each point appears
+    - W_len(n), Aff_len(n), AfP_len(n): length of each row of corresponding matrix
+    - dvec(n): diagonal smoother for each point
+*/
+static void savevec(uint nl, struct amg_setup_data *data, uint n, uint *lvl,
+    uint *W_len, uint *AfP_len, uint *Aff_len, double *dvec, const char *name)
+{
+    const double magic = 3.14159;
+    const double stamp = 2.01;
+    FILE *f = fopen(name,"w");
+    fwrite(&magic,sizeof(double),1,f);
+    fwrite(&stamp,sizeof(double),1,f);
+
+    double dbldum; // dummy double to convert uint to double
+    dbldum = (double)nl;
+    fwrite(&dbldum,sizeof(double),1,f);
+
+    fwrite(data->m,sizeof(double),nl-1,f);
+
+    fwrite(data->rho,sizeof(double),nl-1,f);
+
+    dbldum = (double)n;
+    fwrite(&dbldum,sizeof(double),1,f);
+
+    uint i;
+    for (i=0;i<n;i++)
+    {
+            dbldum = (double)data->id[i];
+            fwrite(&dbldum,sizeof(double),1,f);
+
+            dbldum = (double)lvl[i];
+            fwrite(&dbldum,sizeof(double),1,f);
+
+            dbldum = (double)W_len[i];
+            fwrite(&dbldum,sizeof(double),1,f);
+
+            dbldum = (double)AfP_len[i];
+            fwrite(&dbldum,sizeof(double),1,f);
+
+            dbldum = (double)Aff_len[i];
+            fwrite(&dbldum,sizeof(double),1,f);
+
+            fwrite(&(dvec[i]),sizeof(double),1,f);
+    }
+
+    fclose(f);
 }
 
 /* Interpolation */
@@ -414,6 +610,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
     double *Dc = tmalloc(double, cnc);
     diag(Dc, Ac);
 
+    // Dcinv = 1./dc
     double *Dcinv = tmalloc(double, cnc);
     diag(Dcinv, Ac);
     array_op(Dcinv, rnc, minv_op);
@@ -3058,7 +3255,6 @@ void free_data(struct amg_setup_data **data)
         for (i=0;i<(*data)->nlevels;i++)
         {
             free_csr(&((*data)->A[i]));
-            free((*data)->id[i]);
         }
 
         for (i=0;i<(*data)->nlevels-1;i++)
@@ -3066,18 +3262,22 @@ void free_data(struct amg_setup_data **data)
             free((*data)->C[i]);
             free((*data)->F[i]);
             free((*data)->D[i]);
+            free((*data)->idc[i]);
+            free((*data)->idf[i]);
             free_csr(&((*data)->Af[i]));
-            free_csr(&((*data)->Wt[i]));
-            free_csr(&((*data)->AfPt[i]));
+            free_csr(&((*data)->W[i]));
+            free_csr(&((*data)->AfP[i]));
         }
         free((*data)->id);
+        free((*data)->idc);
+        free((*data)->idf);
         free((*data)->C);
         free((*data)->F);
         free((*data)->D);
         free((*data)->A);
         free((*data)->Af);
-        free((*data)->Wt);
-        free((*data)->AfPt);
+        free((*data)->W);
+        free((*data)->AfP);
         free(*data);
         *data = NULL;
     }

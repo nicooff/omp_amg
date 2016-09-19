@@ -23,7 +23,6 @@ struct labelled_rid {
 
 struct amg_setup_data 
 {
-    // Same as Matlab
     double tolc;
     double gamma;
     double *n;
@@ -33,15 +32,17 @@ struct amg_setup_data
     double *m;
     double *rho;
     struct csr_mat **A;
-    uint **id;
+    uint *id;
+    uint **idc;
+    uint **idf;
     double **C;
     double **F;
     double **D;
     struct csr_mat **Af;
-    struct csr_mat **Wt;
-    struct csr_mat **AfPt;
-    // Additional variables
+    struct csr_mat **W;
+    struct csr_mat **AfP;
     uint nlevels;
+    uint nullspace;
 };
 
 uint *assign_dofs(struct array *const uid,
