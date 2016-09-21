@@ -11,7 +11,8 @@ static void savemats(uint *len, uint n, uint nl, uint *lvl, uint **id,
                      struct csr_mat **mat, const char *filename);
 static uint max_row_nnz(struct csr_mat *mat);
 static void savevec(uint nl, struct amg_setup_data *data, uint n, uint *lvl,
-    uint *W_len, uint *AfP_len, uint *Aff_len, double *dvec, const char *name);
+    uint *W_len, uint *AfP_len, uint *Aff_len, double *dvec, 
+    const char *filename);
 
 /*******************************************************************************
 * AMG functions
@@ -24,7 +25,7 @@ void interpolation(struct csr_mat *W, struct csr_mat *Af, struct csr_mat *Ac,
 /*******************************************************************************
 * Algebraic functions
 *******************************************************************************/
-static void mat_max(double *y, double *yp, struct csr_mat *A, double *f, double *x, 
+static void mat_max(double *y, struct csr_mat *A, double *f, double *x, 
     double tol);
 
 uint lanczos(double **lambda, struct csr_mat *A);
